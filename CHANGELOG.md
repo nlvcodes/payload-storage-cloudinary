@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2025-01-03
+
+### Removed
+- **BREAKING CHANGE**: Removed folder dropdown selection feature entirely
+- Removed FolderSelector component and related client-side components
+- Removed CloudinaryFolderProvider context
+- Removed `/cloudinary/folders` API endpoint
+- Removed `useFolderSelect` configuration option
+
+### Changed
+- Dynamic folders now only support text input mode (`enableDynamic: true`)
+- Updated all documentation to remove references to dropdown folder selection
+- Simplified folder management approach for better reliability
+
+### Why This Change
+The folder dropdown feature had persistent issues with Payload v3's form state integration. The save button wouldn't activate and selected values weren't properly persisted. Rather than maintain a broken feature, we removed it in favor of the reliable text input approach.
+
+### Migration
+If you were using `useFolderSelect: true`, simply remove this option. Dynamic folders will continue to work with text input where users can type folder paths.
+
 ## [1.0.2] - 2025-01-03
 
 ### Changed

@@ -174,27 +174,9 @@ The plugin maintains backward compatibility with the old configuration format. Y
 
 The plugin automatically normalizes old configurations to the new format internally, so you can migrate at your own pace.
 
-## Dynamic Folder Selection
+## Dynamic Folders
 
-### Built-in Folder Select (New)
-The plugin now includes built-in dynamic folder selection:
-
-```typescript
-collections: {
-  media: {
-    folder: {
-      path: 'uploads',
-      enableDynamic: true,
-      useFolderSelect: true, // Enable dropdown folder selection
-    }
-  }
-}
-```
-
-This provides a dropdown of existing Cloudinary folders with the option to create new ones.
-
-### Manual Entry (Default)
-By default, dynamic folders use a text input:
+Dynamic folders allow users to specify the folder path when uploading files:
 
 ```typescript
 collections: {
@@ -207,10 +189,6 @@ collections: {
 }
 ```
 
-## Known Limitations
-
-1. **Dynamic Folder Save Issue**: The dynamic folder selection feature works but doesn't properly trigger Payload's save button or save the selected value to the database. This is due to limitations in how custom field components integrate with Payload's form state. Users need to make another change to the document after selecting a folder for the save button to activate.
-
-2. **Function-based Folders**: Using functions to dynamically determine folders based on context (e.g., date-based or user-based folders) is documented but should be tested thoroughly with your specific use case.
+This adds a text field to the upload form where users can type folder paths like `products/2024` or `blog/images`.
 
 See the [README](../README.md) for the most up-to-date information.

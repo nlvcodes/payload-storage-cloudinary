@@ -7,7 +7,6 @@ import { createURLGenerator } from './handlers/generateURL.js'
 import { createStaticHandler } from './handlers/staticHandler.js'
 import { createSignedURLEndpoint, createBatchSignedURLEndpoint } from './endpoints/signedURL.js'
 import { createUploadStatusEndpoint, createCancelUploadEndpoint } from './endpoints/uploadStatus.js'
-import { cloudinaryFoldersHandler } from './endpoints/cloudinaryFolders.js'
 import { normalizeCollectionConfig, getFolderConfig, getTransformationConfig } from './helpers/normalizeConfig.js'
 import { v2 as cloudinary } from 'cloudinary'
 
@@ -191,16 +190,6 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
         }
       })
     }
-    
-    // Add global endpoints
-    modifiedConfig.endpoints = [
-      ...(modifiedConfig.endpoints || []),
-      {
-        path: '/cloudinary/folders',
-        method: 'post',
-        handler: cloudinaryFoldersHandler,
-      },
-    ]
     
     
     return modifiedConfig

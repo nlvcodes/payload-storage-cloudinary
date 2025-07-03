@@ -413,9 +413,9 @@ Create a CSS file to style the component:
 4. **Dark Mode Support**: Automatically adapts to Payload's dark mode
 5. **Accessibility**: Proper labels and keyboard navigation
 
-## Alternative: Built-in Dynamic Folder Selection
+## Simple Text Input Alternative
 
-Instead of implementing a custom field component, you can use the plugin's built-in dynamic folder selection:
+For most use cases, the built-in dynamic folder feature with a text input is sufficient:
 
 ```typescript
 cloudinaryStorage({
@@ -423,15 +423,14 @@ cloudinaryStorage({
     media: {
       folder: {
         path: 'uploads',
-        enableDynamic: true,
-        useFolderSelect: true, // Enable dropdown folder selection
+        enableDynamic: true, // Simple text input
       },
     },
   },
 })
 ```
 
-This provides similar functionality without needing custom components.
+This adds a text field where users can type folder paths. Only implement a custom field if you need the advanced features mentioned above.
 
 ## Security Considerations
 

@@ -37,31 +37,6 @@ collections: {
 }
 ```
 
-### Built-in Folder Selection
-
-Enable dropdown folder selection with existing Cloudinary folders:
-
-```typescript
-cloudinaryStorage({
-  collections: {
-    media: {
-      folder: {
-        path: 'uploads',
-        enableDynamic: true,
-        useFolderSelect: true, // Enable dropdown selection
-      },
-    },
-  },
-})
-```
-
-This provides:
-- Dropdown list of existing Cloudinary folders
-- Option to create new folders
-- Automatic folder fetching from Cloudinary
-
-**Note:** There is a known issue where the selected folder value doesn't immediately trigger the save button. Users need to make another change to the document after selecting a folder.
-
 ## User-Selectable Folders
 
 Allow users to choose the folder when uploading:

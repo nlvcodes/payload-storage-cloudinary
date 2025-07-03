@@ -107,23 +107,7 @@ collections: {
 
 ## Advanced Features
 
-### Dynamic Folders with Dropdown Selection
-
-Enable dropdown folder selection:
-
-```typescript
-collections: {
-  media: {
-    folder: {
-      path: 'uploads',
-      enableDynamic: true,
-      useFolderSelect: true, // Enable dropdown selection
-    },
-  },
-}
-```
-
-### Dynamic Folders with Text Input
+### Dynamic Folders
 
 ```typescript
 collections: {
@@ -605,14 +589,6 @@ function PrivateImage({ docId }: { docId: string }) {
 - [Signed URLs Guide](./docs/signed-urls.md)
 
 ## Known Limitations
-
-### Dynamic Folder Selection
-The built-in dropdown folder selection (`useFolderSelect: true`) has a known issue where:
-- The selected folder value displays correctly but doesn't trigger Payload's save button
-- The value isn't saved to the database automatically
-- **Workaround**: Make another change to the document after selecting a folder to activate the save button
-
-This is due to limitations in how custom field components integrate with Payload v3's form state. The text input mode (`enableDynamic: true` without `useFolderSelect`) works correctly.
 
 ### Large File Uploads
 - Files over 100MB automatically use Cloudinary's chunked upload API
