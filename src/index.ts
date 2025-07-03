@@ -12,8 +12,19 @@ import { normalizeCollectionConfig, getFolderConfig, getTransformationConfig } f
 import { v2 as cloudinary } from 'cloudinary'
 
 export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
+  // Validate cloud config exists
+  if (!options?.cloudConfig) {
+    throw new Error('Cloudinary cloud_name, api_key, and api_secret are required')
+  }
+  
+  // Validate required fields
   if (!options.cloudConfig.cloud_name || !options.cloudConfig.api_key || !options.cloudConfig.api_secret) {
-    throw new Error('Missing required Cloudinary configuration: cloud_name, api_key, and api_secret are required')
+    throw new Error('Cloudinary cloud_name, api_key, and api_secret are required')
+  }
+  
+  // Validate collections exist
+  if (!options.collections || Object.keys(options.collections).length === 0) {
+    throw new Error('At least one collection must be configured for Cloudinary storage')
   }
   
   cloudinary.config(options.cloudConfig)

@@ -201,4 +201,10 @@ export class UploadQueue {
     // Can't cancel active uploads in this implementation
     return false
   }
+  
+  clearCompleted(): number {
+    // Since we don't keep completed tasks in memory, return 0
+    // In a real implementation, you might track completed tasks separately
+    return 0
+  }
 }
