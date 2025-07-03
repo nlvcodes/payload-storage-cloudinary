@@ -30,6 +30,7 @@
     "build:copy": "copyfiles -u 1 \"src/**/*.{scss,css}\" dist",
     "dev": "pnpm build:swc --watch",
     "clean": "rm -rf dist",
+    "prepare": "pnpm build",
     "prepublishOnly": "pnpm clean && pnpm build",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
