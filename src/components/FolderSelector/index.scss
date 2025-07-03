@@ -1,0 +1,44 @@
+.cloudinaryFolderField {
+  margin-bottom: var(--base);
+  
+  &__mode-selector {
+    margin-bottom: var(--base);
+    display: flex;
+    gap: var(--base);
+  }
+  
+  &__radio-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  
+  &__radio-input {
+    margin-right: 0.5rem;
+  }
+  
+  &__error {
+    color: var(--color-error);
+    margin-top: var(--base);
+    font-size: var(--font-size-small);
+  }
+  
+  &__text-input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--color-base-400);
+    border-radius: 0.25rem;
+    font-size: var(--font-size-base);
+    background-color: var(--color-base-0);
+    
+    &:read-only {
+      background-color: var(--color-base-100);
+    }
+  }
+  
+  &__help-text {
+    margin-top: 0.5rem;
+    font-size: var(--font-size-small);
+    color: var(--color-text-secondary);
+  }
+}

@@ -1,2 +1,2 @@
-export { FolderSelector } from '../components/FolderSelector/index.js'
-export { CloudinaryFolderProvider } from '../providers/CloudinaryFolderProvider/index.js'
+export { FolderSelector } from '../components/FolderSelector/index.client.js'
+export { CloudinaryFolderProvider } from '../providers/CloudinaryFolderProvider/index.client.js'

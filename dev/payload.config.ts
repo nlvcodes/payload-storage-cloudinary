@@ -77,6 +77,12 @@ export default buildConfig({
             ],
         },
     ],
+    admin: {
+        autoLogin: {
+            email: 'nick@midlowebdesign.com',
+            password: 'test',
+        }
+    },
     plugins: [
         cloudinaryStorage({
             cloudConfig: {
