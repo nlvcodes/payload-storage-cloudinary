@@ -1,19 +1,21 @@
 import type { PayloadHandler } from 'payload'
 import { v2 as cloudinary } from 'cloudinary'
 
-export const cloudinaryFoldersHandler: PayloadHandler = async (req) => {
+export const cloudinaryFoldersHandler: PayloadHandler = async () => {
   try {
-    const body = req.json ? await req.json() : {}
-    const { cloudName, apiKey, apiSecret } = body
+    // Get credentials from environment variables
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+    const apiKey = process.env.CLOUDINARY_API_KEY
+    const apiSecret = process.env.CLOUDINARY_API_SECRET
 
     if (!cloudName || !apiKey || !apiSecret) {
       return Response.json(
-        { error: 'Missing Cloudinary credentials' },
-        { status: 400 }
+        { error: 'Cloudinary credentials not configured on server' },
+        { status: 500 }
       )
     }
 
-    // Configure Cloudinary with the provided credentials
+    // Configure Cloudinary with server-side credentials
     cloudinary.config({
       cloud_name: cloudName,
       api_key: apiKey,

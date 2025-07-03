@@ -17,38 +17,46 @@ type Props = {
 
 export const FolderSelector: React.FC = () => {
   const { value, setValue } = useField() || {value: "", setValue: () => {}}
-  const [options, setOptions] = useState([])
+  const [options, setOptions] = useState<Array<{ label: string; value: string }>>([])
 
 
 
   useEffect(() => {
     const fetchOptions = async () => {
       try {
+        // The endpoint should use server-side credentials
         const response = await fetch(`${window.location.origin}/api/cloudinary/folders`, {
-          method: 'POST',
+          method: 'GET',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            cloudName: "db4nqbopr",
-            apiKey: '298568143978742',
-            apiSecret: 'sx-vmPwIBjfvKWI8tdXXzhQLbO4',
-          }),
         })
 
-        const data = await response.json()
+        if (!response.ok) {
+          throw new Error('Failed to fetch folders')
+        }
 
-        const folderOptions = data.map((folder: any) => {
+        const data = await response.json()
+        const folders = data.folders || []
+
+        const folderOptions = folders.map((folder: any) => {
           return {
             label: folder.label || folder.name || folder.path || '/ (root)',
             value: folder.value !== undefined ? folder.value : (folder.path || folder.name || ''),
           }
         })
         setOptions(folderOptions)
-      } catch {
-        console.log('Error fetching folders')
+      } catch (error) {
+        console.error('Error fetching folders:', error)
+        // Set some default options as fallback
+        setOptions([
+          { label: 'uploads', value: 'uploads' },
+          { label: 'media', value: 'media' },
+          { label: 'images', value: 'images' },
+        ])
       }
     }
+    fetchOptions()
   }, [])
 
   return (

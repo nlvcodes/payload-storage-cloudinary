@@ -41,6 +41,14 @@ dev/.next/
 dev/out/
 dev/build/
 dev/.vercel
+dev/.env
+dev/.env.*
+
+# Test files that might contain credentials
+test-*.js
+test-*.ts
+*.test.js
+*.test.ts
 
 # Package files
 *.tgz
