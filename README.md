@@ -623,12 +623,6 @@ Then add your own field to the collection. See [custom-folder-field.ts](./exampl
 - Conditional folder paths based on other fields
 - Custom React components for folder selection
 
-### Advanced: Dropdown Folder Selection
-For a more advanced UI with a dropdown of existing Cloudinary folders, see the [Advanced Folder Selector Guide](./docs/advanced-folder-selector.md). This requires manual implementation in your collection but provides:
-- Dropdown of all existing Cloudinary folders
-- Ability to select existing folders or create new ones
-- Real-time folder fetching from your Cloudinary account
-
 
 ## Requirements
 
@@ -670,4 +664,4 @@ MIT
 
 ## Credits
 
-Built with ❤️ for the Payload CMS community by Nick Vogel.
+Built for the Payload CMS community.
