@@ -81,7 +81,7 @@ export default buildConfig({
         autoLogin: {
             email: 'nick@midlowebdesign.com',
             password: 'test',
-        }
+        },
     },
     plugins: [
         cloudinaryStorage({
@@ -93,10 +93,9 @@ export default buildConfig({
             collections: {
                 media: {
                     folder: {
-                        // path: `media/${new Date().getFullYear()}`,
+                        path: 'uploads',
                         enableDynamic: true,
                         fieldName: 'cloudinaryFolder',
-                        useFolderSelect: true, // Enable the new dropdown folder selection
                     },
                     deleteFromCloudinary: false,
                     transformations: {

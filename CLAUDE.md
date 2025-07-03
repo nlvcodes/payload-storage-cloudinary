@@ -95,10 +95,11 @@ The `dev/` folder contains a Next.js + Payload v3 test application configured to
    - `deleteFromCloudinary`: Boolean to control whether files are deleted from Cloudinary (default: true)
    - Backward compatibility maintained through `normalizeConfig.ts`
 
-5. **Dynamic Folder Selection Limitation**:
-   - Custom field components for API-based folder selection were attempted but failed due to Payload v3 limitations
-   - Current implementation allows manual folder path entry when `enableDynamic` is true
-   - The limitation is documented in README under "Known Limitations"
+5. **Dynamic Folder Selection Approach**:
+   - Default implementation provides a simple text field for folder path entry when `enableDynamic` is true
+   - Advanced dropdown folder selection is available as an optional component (FolderSelector) that users can manually implement
+   - The FolderSelector component requires manual integration due to form context limitations in plugin-provided field components
+   - Documentation provided in docs/advanced-folder-selector.md for users who want the dropdown functionality
 
 6. **Private Files Implementation**:
    - `privateFiles` configuration automatically enables signed URLs
@@ -194,14 +195,13 @@ cloudinaryStorage({
 
 ### Session Updates (Latest):
 
-1. **Dynamic Folder Selection Implementation**:
-   - Successfully implemented dropdown folder selection based on Payload's multi-tenant plugin pattern
-   - Added `useFolderSelect` option to enable dynamic folder selection
-   - Created FolderSelector component with radio toggle between "Select existing" and "Create new"
-   - Implemented CloudinaryFolderProvider for managing folder state
-   - Fetches all folders (including nested) from Cloudinary using Admin API with recursive sub-folder fetching
-   - Falls back to Search API if Admin API fails
-   - Added ability to create new folders by typing custom paths
+1. **Dynamic Folder Selection - Final Solution**:
+   - Added `skipFieldCreation` option to `FolderConfig` to prevent the plugin from creating the field
+   - This allows users to provide their own field implementation without duplicate field name errors
+   - Implemented secure server-side API endpoint for folder fetching in the dev example
+   - Removed NEXT_PUBLIC_ environment variables to prevent exposing API credentials
+   - Created comprehensive documentation and examples for custom field implementation
+   - The `/dev` folder now contains a working example of dynamic folder selection with dropdown UI
 
 ### Previous Session Updates:
 
@@ -235,13 +235,11 @@ cloudinaryStorage({
 
 ### Known Issues and Limitations:
 
-1. **Dynamic Folder Selection Issues**:
-   - **Save Button Activation**: The dynamic folder selection feature works but doesn't trigger Payload's save button
-   - **Data Not Saving**: The selected folder value is not being saved to the database
-   - This is due to limitations in how custom field components integrate with Payload's form state
-   - Workaround: Users need to make another change to the document after selecting a folder
-   - Multiple attempts with useField, useAllFormFields, and dispatchFields have not resolved this
-   - TODO: Need to investigate proper form integration to save the selected folder value
+1. **Dynamic Folder Selection** - **RESOLVED**:
+   - Previously had issues with custom field components not integrating properly with Payload's form state
+   - **Solution**: Added `skipFieldCreation: true` option to prevent plugin from creating the field
+   - Users can now provide their own field implementation with full control
+   - See `/dev` folder for a working example with secure API endpoint
 
 2. **Frontend Confusion**:
    - Users often confused why they get thumbnail instead of transformed images

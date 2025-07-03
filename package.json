@@ -11,8 +11,9 @@
       "types": "./dist/index.d.ts"
     },
     "./client": {
-      "import": "./dist/exports/client.js",
-      "types": "./dist/exports/client.d.ts"
+      "import": "./src/exports/client.ts",
+      "types": "./src/exports/client.ts",
+      "default": "./src/exports/client.ts"
     },
     "./helpers/*": {
       "import": "./dist/helpers/*.js",
@@ -23,9 +24,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm build:types && pnpm build:swc",
+    "build": "pnpm build:types && pnpm build:swc && pnpm build:copy",
     "build:swc": "swc src -d dist --strip-leading-paths",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "build:copy": "copyfiles -u 1 \"src/**/*.{scss,css}\" dist",
     "dev": "pnpm build:swc --watch",
     "clean": "rm -rf dist",
     "prepublishOnly": "pnpm clean && pnpm build",
@@ -46,16 +48,16 @@
     "upload",
     "media"
   ],
-  "author": "",
+  "author": "Nick Vogel",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/payload-storage-cloudinary"
+    "url": "https://github.com/your-github-username/payload-storage-cloudinary"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/payload-storage-cloudinary/issues"
+    "url": "https://github.com/your-github-username/payload-storage-cloudinary/issues"
   },
-  "homepage": "https://github.com/yourusername/payload-storage-cloudinary#readme",
+  "homepage": "https://github.com/your-github-username/payload-storage-cloudinary#readme",
   "peerDependencies": {
     "@payloadcms/ui": "^3.0.0",
     "payload": "^3.0.0",
@@ -74,6 +76,7 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vitest/coverage-v8": "^2.0.0",
+    "copyfiles": "^2.4.1",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-prettier": "^5.0.0",

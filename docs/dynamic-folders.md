@@ -63,9 +63,11 @@ Allow users to choose the folder when uploading:
 cloudinaryStorage({
   collections: {
     media: {
-      enableDynamicFolders: true,
-      folder: 'uploads', // Default folder
-      folderField: 'cloudinaryFolder', // Field name for folder selection
+      folder: {
+        path: 'uploads', // Default folder
+        enableDynamic: true, // Enable folder selection
+        fieldName: 'cloudinaryFolder', // Field name (optional, defaults to 'cloudinaryFolder')
+      },
     },
   },
 })
@@ -75,6 +77,61 @@ This adds a "Cloudinary Folder" field to the upload form where users can specify
 - `products/electronics`
 - `blog/2024/july`
 - `team/marketing`
+
+### Custom Field Implementation
+
+If you need more control over the folder field (e.g., custom UI component, validation, or dropdown selector), you can prevent the plugin from creating the field automatically:
+
+```typescript
+cloudinaryStorage({
+  collections: {
+    media: {
+      folder: {
+        path: 'uploads',
+        enableDynamic: true,
+        fieldName: 'cloudinaryFolder',
+        skipFieldCreation: true, // Prevent automatic field creation
+      },
+    },
+  },
+})
+```
+
+Then add your own field to the collection:
+
+```typescript
+const Media: CollectionConfig = {
+  slug: 'media',
+  upload: {
+    disableLocalStorage: true,
+  },
+  fields: [
+    {
+      name: 'cloudinaryFolder',
+      type: 'text',
+      label: 'Upload Folder',
+      defaultValue: 'uploads',
+      admin: {
+        description: 'Choose the folder for this upload',
+        // Add custom component if needed
+        components: {
+          Field: MyCustomFolderSelector,
+        },
+      },
+      // Add validation if needed
+      validate: (value) => {
+        if (value && !value.match(/^[a-zA-Z0-9\/_-]+$/)) {
+          return 'Folder name can only contain letters, numbers, hyphens, underscores, and slashes'
+        }
+        return true
+      },
+    },
+    // ... other fields
+  ],
+}
+```
+
+The plugin will still use the field value during upload, but you have complete control over the field's behavior and appearance.
 
 ## Folder Templates with Variables
 

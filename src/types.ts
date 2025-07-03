@@ -12,7 +12,7 @@ export interface FolderConfig {
   path?: string // The default folder path
   enableDynamic?: boolean // Allow users to specify custom folders
   fieldName?: string // Custom field name for the folder input
-  useFolderSelect?: boolean // Use dropdown folder selection instead of text input
+  skipFieldCreation?: boolean // Skip automatic field creation, allowing users to provide their own implementation
 }
 
 export interface TransformationConfig {

@@ -1,40 +1,43 @@
-# Source files
-src/
+# Development files
 dev/
+src/
+docs/
+examples/
 
 # Configuration files
 .eslintrc.js
-.prettierrc.json
-.swcrc
+.prettierrc
 tsconfig.json
 vitest.config.ts
+.swcrc
 
-# Development files
-*.test.ts
-*.spec.ts
-coverage/
-.vitest/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Git
+# Git files
 .git/
 .gitignore
 
+# Build artifacts
+*.log
+*.tsbuildinfo
+
+# IDE files
+.vscode/
+.idea/
+
+# Test files
+*.test.ts
+*.spec.ts
+coverage/
+.nyc_output/
+
 # Misc
 .DS_Store
-*.log
-.env*
-.cache/
-.temp/
-.tmp/
+node_modules/
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
 
-# Keep only dist folder and essential files
+# Keep dist and README
 !dist/
-!package.json
 !README.md
 !LICENSE
+!package.json

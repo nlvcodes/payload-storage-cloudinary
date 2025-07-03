@@ -85,8 +85,8 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                   description: 'File size in bytes',
                 },
               },
-              // Add folder field if dynamic folders are enabled
-              ...(folderConfig.enableDynamic ? [{
+              // Add folder field if dynamic folders are enabled and not skipped
+              ...(folderConfig.enableDynamic && !folderConfig.skipFieldCreation ? [{
                 name: folderConfig.fieldName || 'cloudinaryFolder',
                 type: 'text' as const,
                 label: 'Cloudinary Folder',
@@ -94,17 +94,6 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                 admin: {
                   description: 'Folder path in Cloudinary (e.g., products/2024)',
                   placeholder: folderConfig.path || 'uploads',
-                  ...(folderConfig.useFolderSelect ? {
-                    components: {
-                      Field: {
-                        path: 'payload-storage-cloudinary/client#FolderSelector',
-                        clientProps: {
-                          cloudConfig: options.cloudConfig,
-                          collectionSlug: slug,
-                        },
-                      },
-                    },
-                  } : {}),
                 },
               }] : []),
               // Add preset field if preset selection is enabled
@@ -202,35 +191,11 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
       },
     ]
     
-    // Add the CloudinaryFolderProvider to admin providers if any collection uses folder selection
-    const hasAnyFolderSelect = Object.entries(options.collections).some(([_, collectionConfig]) => {
-      if (typeof collectionConfig === 'boolean') return false
-      const rawConfig = typeof collectionConfig === 'object' ? collectionConfig : {}
-      const config = normalizeCollectionConfig(rawConfig)
-      const folderConfig = getFolderConfig(config)
-      return folderConfig.useFolderSelect
-    })
-
-    if (hasAnyFolderSelect) {
-      if (!modifiedConfig.admin) {
-        modifiedConfig.admin = {}
-      }
-      if (!modifiedConfig.admin.components) {
-        modifiedConfig.admin.components = {}
-      }
-      if (!modifiedConfig.admin.components.providers) {
-        modifiedConfig.admin.components.providers = []
-      }
-      
-      modifiedConfig.admin.components.providers.push({
-        path: 'payload-storage-cloudinary/client#CloudinaryFolderProvider',
-      })
-    }
     
     return modifiedConfig
   }
 }
 
-export type { CloudinaryStorageOptions, CloudinaryCollectionConfig, TransformationPreset, SignedURLConfig } from './types.js'
+export type { CloudinaryStorageOptions, CloudinaryCollectionConfig, TransformationPreset, SignedURLConfig, FolderConfig } from './types.js'
 export { getTransformationUrl, commonPresets } from './helpers/transformations.js'
 export { generateSignedURL, generateDownloadURL, isAccessAllowed } from './helpers/signedURLs.js'

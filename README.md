@@ -113,7 +113,7 @@ collections: {
   media: {
     folder: {
       path: 'uploads', // Default folder
-      enableDynamic: true, // Let users choose per upload
+      enableDynamic: true, // Let users type folder path per upload
       fieldName: 'cloudinaryFolder', // Custom field name
     },
   },
@@ -127,6 +127,24 @@ collections: {
   },
 }
 
+// For custom field implementation (e.g., dropdown selector):
+collections: {
+  media: {
+    folder: {
+      path: 'uploads',
+      enableDynamic: true,
+      skipFieldCreation: true, // Don't create the field automatically
+    },
+  },
+}
+```
+
+**Custom Folder Field**: When `skipFieldCreation` is true, you need to add your own `cloudinaryFolder` field to the collection. See:
+- [Custom Folder Field Example](./docs/custom-folder-field-example.md) - Complete implementation with dropdown
+- [Dynamic Folders Documentation](./docs/dynamic-folders.md) - All configuration options
+
+### Private Files
+```typescript
 // Simple private files configuration:
 collections: {
   documents: {
@@ -302,6 +320,40 @@ function ProductImage({ doc }) {
 }
 ```
 
+### Using Stored Transformation Presets
+
+If you enable preset selection in your config, users can choose a transformation preset during upload:
+
+```typescript
+// Plugin configuration
+transformations: {
+  enablePresetSelection: true,
+  presets: commonPresets, // thumbnail, card, banner
+}
+```
+
+The selected preset is stored in the `transformationPreset` field:
+
+```tsx
+import { getTransformationUrl, commonPresets } from 'payload-storage-cloudinary'
+
+function PresetAwareImage({ doc }) {
+  // Check if a preset was selected during upload
+  if (doc.transformationPreset) {
+    const presetUrl = getTransformationUrl({
+      publicId: doc.cloudinaryPublicId,
+      version: doc.cloudinaryVersion,
+      presetName: doc.transformationPreset, // Use the stored preset
+      presets: commonPresets,
+    })
+    return <img src={presetUrl} alt={doc.alt} />
+  }
+  
+  // Fallback to default URL
+  return <img src={doc.url} alt={doc.alt} />
+}
+```
+
 ### Apply Transformations on the Frontend
 
 The `url` field contains whatever default transformations you configured. To apply different transformations on the frontend, you have several options:
@@ -447,50 +499,54 @@ function PrivateImage({ docId }: { docId: string }) {
 
 ## Advanced Folder Management
 
-### Dynamic Folder Selection with Dropdown
-The plugin now supports dynamic folder selection with a dropdown that fetches folders directly from your Cloudinary account:
+### Dynamic Folder Input
+The plugin supports dynamic folder selection with a text field where users can type folder paths:
 
 ```typescript
 collections: {
   media: {
     folder: {
       path: 'uploads', // Default folder
-      enableDynamic: true, // Enable dynamic folder selection
+      enableDynamic: true, // Enable dynamic folder input
       fieldName: 'cloudinaryFolder', // Field name for folder storage
-      useFolderSelect: true, // Enable dropdown folder selection
     },
   },
 }
 ```
 
-When `useFolderSelect` is enabled:
-- A dropdown field appears in the upload form with radio buttons to toggle between:
-  - **Select existing folder**: Choose from a dropdown of all folders in your Cloudinary account (including nested folders)
-  - **Create new folder**: Type a custom folder path that will be created on upload
-- Folders are automatically fetched from your Cloudinary account using the Admin API
-- All nested folders are displayed in the dropdown
-- The selected folder is stored with the upload
+When `enableDynamic` is enabled:
+- A text field appears in the upload form
+- Users can type any folder path (e.g., `products/2024/summer`)
+- Folders are automatically created in Cloudinary if they don't exist
+- The folder path is stored with the upload
 
-### Manual Folder Input
-If you prefer manual folder input or want a simpler implementation:
+### Custom Folder Field Implementation
+If you need more control over the folder field (custom UI, validation, or conditional logic), you can prevent the plugin from creating the field:
 
 ```typescript
 collections: {
   media: {
     folder: {
       path: 'uploads',
-      enableDynamic: true, // Allow manual folder input
-      // useFolderSelect: false (or omitted)
+      enableDynamic: true,
+      skipFieldCreation: true, // Prevent automatic field creation
     },
   },
 }
 ```
 
-This provides a text field where users can manually type folder paths.
+Then add your own field to the collection. See [custom-folder-field.ts](./examples/custom-folder-field.ts) for examples including:
+- Select dropdown with predefined folders
+- Field validation and sanitization
+- Conditional folder paths based on other fields
+- Custom React components for folder selection
 
-### Known Limitations
+### Advanced: Dropdown Folder Selection
+For a more advanced UI with a dropdown of existing Cloudinary folders, see the [Advanced Folder Selector Guide](./docs/advanced-folder-selector.md). This requires manual implementation in your collection but provides:
+- Dropdown of all existing Cloudinary folders
+- Ability to select existing folders or create new ones
+- Real-time folder fetching from your Cloudinary account
 
-- **Save button activation**: Currently, changing the folder selection does not automatically activate the save button in Payload CMS. This is due to limitations in how custom field components integrate with Payload's form state management. Users need to make another change to the document to enable saving after selecting a folder.
 
 ## Requirements
 

@@ -35,3 +35,12 @@ coverage/
 .cache/
 .temp/
 .tmp/
+
+# Next.js dev environment
+dev/.next/
+dev/out/
+dev/build/
+dev/.vercel
+
+# Package files
+*.tgz

@@ -1,2 +1,3 @@
-export { FolderSelector } from '../components/FolderSelector/index.client.js'
-export { CloudinaryFolderProvider } from '../providers/CloudinaryFolderProvider/index.client.js'
+// Client-side exports for payload-storage-cloudinary
+// Currently no client-side components are exported by this plugin
+export {}
