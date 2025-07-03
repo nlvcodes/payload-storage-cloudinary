@@ -174,11 +174,43 @@ The plugin maintains backward compatibility with the old configuration format. Y
 
 The plugin automatically normalizes old configurations to the new format internally, so you can migrate at your own pace.
 
-## Removed Features
+## Dynamic Folder Selection
 
-### Dynamic Folder Selection from API
-The `useFolderSelect` option has been removed due to limitations in Payload CMS v3's custom field component system. Users can still:
-- Type folder paths manually when `folder.enableDynamic` is true
-- Use different collection configurations for different folder structures
+### Built-in Folder Select (New)
+The plugin now includes built-in dynamic folder selection:
 
-See the [Known Limitations](../README.md#known-limitations) section in the README for more information.
+```typescript
+collections: {
+  media: {
+    folder: {
+      path: 'uploads',
+      enableDynamic: true,
+      useFolderSelect: true, // Enable dropdown folder selection
+    }
+  }
+}
+```
+
+This provides a dropdown of existing Cloudinary folders with the option to create new ones.
+
+### Manual Entry (Default)
+By default, dynamic folders use a text input:
+
+```typescript
+collections: {
+  media: {
+    folder: {
+      path: 'uploads',
+      enableDynamic: true, // Text input for folder path
+    }
+  }
+}
+```
+
+## Known Limitations
+
+1. **Dynamic Folder Save Issue**: The dynamic folder selection feature works but doesn't properly trigger Payload's save button or save the selected value to the database. This is due to limitations in how custom field components integrate with Payload's form state. Users need to make another change to the document after selecting a folder for the save button to activate.
+
+2. **Function-based Folders**: Using functions to dynamically determine folders based on context (e.g., date-based or user-based folders) is documented but should be tested thoroughly with your specific use case.
+
+See the [README](../README.md) for the most up-to-date information.

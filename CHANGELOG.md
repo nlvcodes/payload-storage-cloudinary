@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2025-01-03
+
+### Changed
+- Updated all documentation to reflect current implementation
+- Removed outdated references to function-based folder configuration
+- Combined transformations and transformation-presets documentation
+- Fixed markdown formatting issues throughout docs
+- Clarified that `privateFiles: true` automatically enables signed URLs
+
+### Added
+- Documentation for built-in dropdown folder selection with `useFolderSelect`
+- Known limitations section in README explaining dynamic folder save issue
+- Comprehensive examples for using transformation presets
+- Common folder structure examples in dynamic folders guide
+
+### Fixed
+- Removed references to non-existent features (radio toggle, commonFolders)
+- Updated migration guide with accurate information
+- Clarified access control documentation
+- Fixed formatting issues in multiple documentation files
+
+### Documentation
+- Comprehensive update of all documentation files to match current implementation
+- Added workarounds for known limitations
+- Improved frontend transformation examples
+- Better organization of configuration options
+
 ## [1.0.1] - 2025-01-03
 
 ### Fixed

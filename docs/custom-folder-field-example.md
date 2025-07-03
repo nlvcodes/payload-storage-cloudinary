@@ -5,11 +5,12 @@ This document provides a complete example of implementing a custom folder select
 ## Overview
 
 The custom folder field provides:
-- Radio toggle between "Select existing folder" and "Create new folder"
 - Dropdown list of existing Cloudinary folders
 - Text input for creating new folder paths
 - Secure server-side API for fetching folders
 - Professional styling that matches Payload's UI
+
+**Note:** The radio toggle implementation shown in this example is optional. The plugin now includes built-in dynamic folder selection with `useFolderSelect: true`.
 
 ## Implementation
 
@@ -75,7 +76,8 @@ export default buildConfig({
 Create a secure server-side endpoint to fetch Cloudinary folders:
 
 ```typescript
-// app/api/cloudinary/folders/route.ts
+// app/api/cloudinary/folders/route.ts (Next.js App Router)
+// Or create an equivalent endpoint in your framework
 import { NextRequest, NextResponse } from 'next/server'
 import { v2 as cloudinary } from 'cloudinary'
 
@@ -405,12 +407,31 @@ Create a CSS file to style the component:
 
 ## Features
 
-1. **Automatic Mode Detection**: If a value exists that's not in the folder list, it automatically switches to custom mode
-2. **Loading State**: Shows a loading indicator while fetching folders
-3. **Error Handling**: Gracefully handles API errors with fallback to manual input
-4. **Responsive Design**: Works well on all screen sizes
-5. **Dark Mode Support**: Automatically adapts to Payload's dark mode
-6. **Accessibility**: Proper labels and keyboard navigation
+1. **Loading State**: Shows a loading indicator while fetching folders
+2. **Error Handling**: Gracefully handles API errors with fallback to manual input
+3. **Responsive Design**: Works well on all screen sizes
+4. **Dark Mode Support**: Automatically adapts to Payload's dark mode
+5. **Accessibility**: Proper labels and keyboard navigation
+
+## Alternative: Built-in Dynamic Folder Selection
+
+Instead of implementing a custom field component, you can use the plugin's built-in dynamic folder selection:
+
+```typescript
+cloudinaryStorage({
+  collections: {
+    media: {
+      folder: {
+        path: 'uploads',
+        enableDynamic: true,
+        useFolderSelect: true, // Enable dropdown folder selection
+      },
+    },
+  },
+})
+```
+
+This provides similar functionality without needing custom components.
 
 ## Security Considerations
 

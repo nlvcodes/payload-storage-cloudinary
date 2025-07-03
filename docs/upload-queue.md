@@ -110,24 +110,13 @@ collections: {
 }
 ```
 
-### React Component for Progress Display
+### Monitoring Upload Progress
 
-```tsx
-function UploadProgressBar({ doc }) {
-  if (!doc.uploadStatus || doc.uploadStatus === 'completed') {
-    return null
-  }
-  
-  return (
-    <div className="upload-progress">
-      <div className="status">{doc.uploadStatus}</div>
-      <progress value={doc.uploadProgress} max="100">
-        {doc.uploadProgress}%
-      </progress>
-    </div>
-  )
-}
-```
+The upload queue adds temporary status fields during upload:
+- `uploadStatus`: 'queued' | 'uploading' | 'completed' | 'failed'
+- `uploadProgress`: 0-100 percentage
+
+These fields are removed after successful upload. You can create custom UI components to display this progress if needed.
 
 ### Monitoring Multiple Uploads
 

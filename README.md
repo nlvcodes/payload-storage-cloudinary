@@ -5,8 +5,8 @@ A powerful Cloudinary storage adapter for Payload CMS v3 that replaces local fil
 ## Features
 
 - 🚀 **Seamless Cloudinary Integration** - Direct upload to Cloudinary with automatic URL generation
-- 📁 **Dynamic Folder Selection** - Dropdown with real-time folder fetching from Cloudinary
-- 📂 **Smart Folder Management** - Choose from existing folders or create new ones on the fly
+- 📁 **Dynamic Folder Management** - Type folder paths or use custom field components
+- 📂 **Smart Folder Organization** - Auto-create folders on upload
 - 🎨 **Transformation Presets** - Define reusable image transformation sets
 - 📤 **Upload Queue System** - Handle large files with progress tracking
 - 🔒 **Signed URLs** - Secure, time-limited access to private content
@@ -16,17 +16,11 @@ A powerful Cloudinary storage adapter for Payload CMS v3 that replaces local fil
 ## Installation
 
 ```bash
-# From npm (once published)
 npm install payload-storage-cloudinary
 # or
 yarn add payload-storage-cloudinary
 # or
 pnpm add payload-storage-cloudinary
-
-# From GitHub (current method)
-pnpm add github:nlvcodes/payload-storage-cloudinary
-# or
-pnpm add https://github.com/nlvcodes/payload-storage-cloudinary.git
 ```
 
 ## Quick Start
@@ -113,7 +107,24 @@ collections: {
 
 ## Advanced Features
 
-### Dynamic Folders
+### Dynamic Folders with Dropdown Selection
+
+Enable dropdown folder selection:
+
+```typescript
+collections: {
+  media: {
+    folder: {
+      path: 'uploads',
+      enableDynamic: true,
+      useFolderSelect: true, // Enable dropdown selection
+    },
+  },
+}
+```
+
+### Dynamic Folders with Text Input
+
 ```typescript
 collections: {
   media: {
@@ -126,14 +137,19 @@ collections: {
 }
 ```
 
-// Or use the shorthand for just a default folder:
+Or use the shorthand for just a default folder:
+
+```typescript
 collections: {
   media: {
     folder: 'uploads',
   },
 }
+```
 
-// For custom field implementation (e.g., dropdown selector):
+For custom field implementation:
+
+```typescript
 collections: {
   media: {
     folder: {
@@ -145,9 +161,7 @@ collections: {
 }
 ```
 
-**Custom Folder Field**: When `skipFieldCreation` is true, you need to add your own `cloudinaryFolder` field to the collection. See:
-- [Custom Folder Field Example](./docs/custom-folder-field-example.md) - Complete implementation with dropdown
-- [Dynamic Folders Documentation](./docs/dynamic-folders.md) - All configuration options
+**Note**: When `skipFieldCreation` is true, you need to add your own `cloudinaryFolder` field to the collection.
 
 ### Transformation Presets
 
@@ -231,7 +245,9 @@ collections: {
 }
 ```
 
-// Or use the shorthand for just default transformations:
+Or use the shorthand for just default transformations:
+
+```typescript
 collections: {
   media: {
     transformations: {
@@ -240,8 +256,10 @@ collections: {
     },
   },
 }
+```
 
 ### Upload Queue (for Large Files)
+
 ```typescript
 collections: {
   media: {
@@ -582,54 +600,26 @@ function PrivateImage({ docId }: { docId: string }) {
 - [Frontend Transformations Guide](./docs/frontend-transformations.md) - **Start here if images look wrong**
 - [Dynamic Folders Guide](./docs/dynamic-folders.md)
 - [Folder Management Guide](./docs/folder-management.md)
-- [Transformation Presets Guide](./docs/transformation-presets.md)
 - [Transformations Guide](./docs/transformations.md)
 - [Upload Queue Guide](./docs/upload-queue.md)
 - [Signed URLs Guide](./docs/signed-urls.md)
 
-## Advanced Folder Management
+## Known Limitations
 
-### Dynamic Folder Input
-The plugin supports dynamic folder selection with a text field where users can type folder paths:
+### Dynamic Folder Selection
+The built-in dropdown folder selection (`useFolderSelect: true`) has a known issue where:
+- The selected folder value displays correctly but doesn't trigger Payload's save button
+- The value isn't saved to the database automatically
+- **Workaround**: Make another change to the document after selecting a folder to activate the save button
 
-```typescript
-collections: {
-  media: {
-    folder: {
-      path: 'uploads', // Default folder
-      enableDynamic: true, // Enable dynamic folder input
-      fieldName: 'cloudinaryFolder', // Field name for folder storage
-    },
-  },
-}
-```
+This is due to limitations in how custom field components integrate with Payload v3's form state. The text input mode (`enableDynamic: true` without `useFolderSelect`) works correctly.
 
-When `enableDynamic` is enabled:
-- A text field appears in the upload form
-- Users can type any folder path (e.g., `products/2024/summer`)
-- Folders are automatically created in Cloudinary if they don't exist
-- The folder path is stored with the upload
-
-### Custom Folder Field Implementation
-If you need more control over the folder field (custom UI, validation, or conditional logic), you can prevent the plugin from creating the field:
-
-```typescript
-collections: {
-  media: {
-    folder: {
-      path: 'uploads',
-      enableDynamic: true,
-      skipFieldCreation: true, // Prevent automatic field creation
-    },
-  },
-}
-```
-
-Then add your own field to the collection. See [custom-folder-field.ts](./examples/custom-folder-field.ts) for examples including:
-- Select dropdown with predefined folders
-- Field validation and sanitization
-- Conditional folder paths based on other fields
-- Custom React components for folder selection
+### Large File Uploads
+- Files over 100MB automatically use Cloudinary's chunked upload API
+- Upload size limits depend on your Cloudinary plan:
+  - Free plans: typically 10MB for images, 100MB for videos
+  - Paid plans: up to 1GB or more
+- Very large uploads (>500MB) may require adjusting server timeout settings
 
 
 ## Requirements
@@ -668,6 +658,7 @@ MIT
 
 - [GitHub Issues](https://github.com/nlvcodes/payload-storage-cloudinary/issues)
 - [Documentation](./docs)
+- [Discord Community](https://discord.gg/payloadcms)
 - [Cloudinary Docs](https://cloudinary.com/documentation)
 
 ## Credits

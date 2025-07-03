@@ -1,73 +1,106 @@
 # Cloudinary Folder Management
 
-Flexible folder management with the ability to select from common folders or create new ones.
+Organize your uploads into folders with flexible configuration options.
 
 ## Overview
 
 The folder management feature provides:
-- **Select common folders** from a predefined list
-- **Create new folders** by typing custom paths
-- **Radio toggle** to switch between select and text input
-- **Automatic folder creation** on upload
-- **Customizable folder list** via configuration
+- **Static folders** - Set a fixed folder for all uploads
+- **Dynamic folders** - Let users specify folders during upload
+- **Custom field names** - Use your own field name for folder selection
+- **Automatic folder creation** - Folders are created automatically in Cloudinary
 
 ## Configuration
 
-### Basic Setup
+### Static Folder (Simple)
 
 ```typescript
 cloudinaryStorage({
   collections: {
     media: {
-      enableDynamicFolders: true,
-      folder: 'uploads', // Default folder
+      folder: 'uploads', // All uploads go to 'uploads' folder
     },
   },
 })
 ```
 
-
-### Custom Field Name
+### Dynamic Folder Input
 
 ```typescript
-collections: {
-  media: {
-    enableDynamicFolders: true,
-    folderField: 'uploadFolder', // Custom field name
-    folder: 'media/2024', // Default folder
+cloudinaryStorage({
+  collections: {
+    media: {
+      folder: {
+        path: 'uploads', // Default folder
+        enableDynamic: true, // Show folder input field
+        fieldName: 'cloudinaryFolder', // Field name (optional)
+      },
+    },
   },
+})
+```
+
+### Custom Field Implementation
+
+```typescript
+// Plugin configuration
+cloudinaryStorage({
+  collections: {
+    media: {
+      folder: {
+        path: 'uploads',
+        enableDynamic: true,
+        skipFieldCreation: true, // Don't auto-create field
+      },
+    },
+  },
+})
+
+// Then add your own field to the collection
+const Media: CollectionConfig = {
+  slug: 'media',
+  fields: [
+    {
+      name: 'cloudinaryFolder',
+      type: 'text',
+      label: 'Upload Folder',
+      admin: {
+        description: 'Enter folder path (e.g., products/2024)',
+      },
+    },
+  ],
 }
 ```
 
 ## How It Works
 
-1. **Radio Toggle**: Users choose between "Select existing folder" or "Enter custom path"
-2. **Folder Select**: Dropdown with predefined folder options
-3. **Custom Path**: Text input for creating new folder structures
-4. **Auto-Creation**: New folders are created automatically on upload
-5. **Path Cleaning**: Leading/trailing slashes are removed automatically
-6. **Default List**: If no custom folders specified, uses common defaults
+1. **Static Mode**: All files uploaded to the configured folder
+2. **Dynamic Mode**: Users enter folder path in a text field
+3. **Auto-Creation**: Folders are created automatically on first upload
+4. **Path Cleaning**: Leading/trailing slashes are removed automatically
 
 ## Examples
 
 ### User Input → Cloudinary Folder
 - `products` → `products/`
 - `products/2024` → `products/2024/`
-- `/products/` → `products/`
+- `/products/` → `products/` (cleaned)
 - `products/2024/summer` → `products/2024/summer/`
-- `` (empty) → (root folder)
+- `` (empty) → uses default or root folder
 
-## Features
+## Configuration Options
 
-- **No Pre-Setup**: Folders don't need to exist beforehand
-- **Flexible Paths**: Any valid folder path is accepted
-- **Clean URLs**: Paths are normalized automatically
-- **Suggestions**: Common folders shown in field description
-- **Per-Upload Control**: Each upload can go to a different folder
+| Option | Type | Description |
+|--------|------|-------------|
+| `folder` | string \| object | Folder configuration |
+| `folder.path` | string | Default folder path |
+| `folder.enableDynamic` | boolean | Enable user input |
+| `folder.fieldName` | string | Custom field name (default: 'cloudinaryFolder') |
+| `folder.skipFieldCreation` | boolean | Skip automatic field creation |
 
 ## Best Practices
 
-1. **Folder Structure**: Plan your folder hierarchy
+1. **Folder Structure**: Plan your hierarchy
    ```
    uploads/
    ├── media/
@@ -89,15 +122,7 @@ collections: {
    - By type: `images/banners`
    - By feature: `products/thumbnails`
 
-## Configuration Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `enableDynamicFolders` | boolean | Enable folder input field |
-| `folder` | string | Default folder path |
-| `folderField` | string | Custom field name (default: 'cloudinaryFolder') |
-
-## Example Implementation
+## Complete Example
 
 ```typescript
 export default buildConfig({
@@ -124,17 +149,10 @@ export default buildConfig({
       },
       collections: {
         media: {
-          enableDynamicFolders: true,
-          folder: 'uploads',
-          commonFolders: [
-            'uploads',
-            'media/images',
-            'media/videos',
-            'products/photos',
-            'products/thumbnails',
-            'blog/featured',
-            'blog/content',
-          ],
+          folder: {
+            path: 'uploads',
+            enableDynamic: true,
+          },
         },
       },
     }),
@@ -148,10 +166,4 @@ export default buildConfig({
 - Folders cannot be deleted via this plugin (use Cloudinary dashboard)
 - Empty folders don't appear in Cloudinary until they contain files
 - Folder names are case-sensitive in Cloudinary
-- Dynamic folder fetching from Cloudinary API is not currently supported due to Payload v3 custom field limitations
-
-## Note on Dynamic Folder Selection
-
-Dynamic folder selection from Cloudinary API is not currently available due to limitations in Payload CMS v3's custom field component system. Users can still manually type folder paths when `enableDynamicFolders` is enabled.
-
-We are monitoring Payload CMS updates and will re-implement this feature once the framework provides the necessary hooks for proper form integration.
+- Use forward slashes (/) for folder hierarchy

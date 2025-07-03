@@ -47,8 +47,8 @@ dev/.env.*
 # Test files that might contain credentials
 test-*.js
 test-*.ts
-*.test.js
-*.test.ts
+# Allow organized test files in __tests__ directory
+!src/__tests__/**/*.test.ts
 
 # Package files
 *.tgz

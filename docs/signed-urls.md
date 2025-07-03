@@ -19,11 +19,7 @@ Signed URLs provide secure, time-limited access to private files stored in Cloud
 cloudinaryStorage({
   collections: {
     documents: {
-      privateFiles: true, // All files private by default
-      signedURLs: {
-        enabled: true,
-        expiresIn: 3600, // 1 hour
-      },
+      privateFiles: true, // Enables signed URLs with 1-hour expiry
     },
   },
 })
@@ -32,19 +28,29 @@ cloudinaryStorage({
 ### Advanced Configuration
 
 ```typescript
-signedURLs: {
-  enabled: true,
-  expiresIn: 7200, // 2 hours
-  authTypes: ['authenticated'],
-  includeTransformations: true,
-  customAuthCheck: async (req, doc) => {
-    // Custom access control logic
-    return req.user && doc.allowedUsers.includes(req.user.id)
+cloudinaryStorage({
+  collections: {
+    documents: {
+      privateFiles: {
+        enabled: true,
+        expiresIn: 7200, // 2 hours
+        authTypes: ['authenticated'],
+        includeTransformations: true,
+        customAuthCheck: async (req, doc) => {
+          // Custom access control logic
+          return req.user && doc.allowedUsers.includes(req.user.id)
+        },
+      },
+    },
   },
-}
+})
 ```
 
 ## Configuration Options
+
+When using `privateFiles: true` (shorthand), it automatically enables signed URLs with 1-hour expiry.
+
+For full configuration, use an object:
 
 - **enabled** (boolean): Enable signed URL generation
 - **expiresIn** (number): URL expiration time in seconds (default: 3600)
@@ -188,8 +194,7 @@ customAuthCheck: async (req, doc) => {
 ```typescript
 collections: {
   premiumContent: {
-    privateFiles: true,
-    signedURLs: {
+    privateFiles: {
       enabled: true,
       expiresIn: 86400, // 24 hours
       customAuthCheck: async (req, doc) => {
@@ -245,7 +250,7 @@ const previewUrl = generateSignedURL({
 
 Enable debug logging:
 ```typescript
-signedURLs: {
+privateFiles: {
   enabled: true,
   debug: true, // Logs URL generation details
 }
