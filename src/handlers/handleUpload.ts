@@ -67,25 +67,46 @@ export const createUploadHandler = (
     }
     
     // Regular upload (non-queued)
-    // For large files (especially videos), use chunked upload
+    // For large files (especially videos), use upload_large method
     const isLargeFile = file.filesize > 100 * 1024 * 1024 // 100MB
     
     let result
-    if (isLargeFile && config.resourceType !== 'raw') {
-      // Use chunked upload for large files
+    if (isLargeFile) {
+      // Use upload_large for files over 100MB
       try {
-        // Convert buffer to base64 for large file upload
-        const base64 = `data:${file.mimeType};base64,${file.buffer.toString('base64')}`
-        result = await cloudinary.uploader.upload(base64, {
-          ...uploadOptions,
-          chunk_size: 20 * 1024 * 1024, // 20MB chunks
-          timeout: 600000, // 10 minute timeout for large files
+        // Create a temporary readable stream from the buffer
+        const { Readable } = await import('stream')
+        const bufferStream = new Readable()
+        bufferStream.push(file.buffer)
+        bufferStream.push(null)
+        
+        result = await new Promise<any>((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_large_stream(
+            {
+              ...uploadOptions,
+              chunk_size: 20 * 1024 * 1024, // 20MB chunks
+            },
+            (error, result) => {
+              if (error) {
+                const errorMsg = error.message || 'Unknown error'
+                if (errorMsg.includes('413') || errorMsg.includes('File size too large')) {
+                  reject(new Error(`File too large. Cloudinary has file size limits based on your plan. Consider upgrading your Cloudinary plan for larger files.`))
+                } else {
+                  reject(error)
+                }
+              } else {
+                resolve(result)
+              }
+            }
+          )
+          
+          bufferStream.pipe(uploadStream)
         })
       } catch (error) {
         // Provide more specific error message
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-        if (errorMsg.includes('File size too large')) {
-          throw new Error(`File too large for upload. Maximum file size depends on your Cloudinary plan. Error: ${errorMsg}`)
+        if (errorMsg.includes('File size too large') || errorMsg.includes('413')) {
+          throw new Error(`File too large for your Cloudinary plan. Free plans typically support up to 100MB for images and 100MB for videos. Paid plans support larger files.`)
         }
         throw error
       }

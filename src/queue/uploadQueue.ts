@@ -125,67 +125,61 @@ export class UploadQueue {
   }
   
   private async chunkedUpload(task: UploadTask): Promise<void> {
-    const chunkSizeBytes = this.config.chunkSize * 1024 * 1024
-    const totalChunks = Math.ceil(task.buffer.length / chunkSizeBytes)
+    // Use Cloudinary's upload_large_stream for files over threshold
+    const { Readable } = await import('stream')
     
-    // Initialize chunked upload
-    const uploadId = await this.initializeChunkedUpload(task.options)
-    
-    try {
-      // Upload chunks
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * chunkSizeBytes
-        const end = Math.min(start + chunkSizeBytes, task.buffer.length)
-        const chunk = task.buffer.slice(start, end)
-        
-        await this.uploadChunk(uploadId, chunk, i, totalChunks)
-        
-        const progress = Math.round(((i + 1) / totalChunks) * 100)
+    return new Promise((resolve, reject) => {
+      // Create a readable stream from the buffer
+      const bufferStream = new Readable()
+      bufferStream.push(task.buffer)
+      bufferStream.push(null)
+      
+      // Use upload_large_stream which handles chunking automatically
+      const uploadStream = cloudinary.uploader.upload_large_stream(
+        {
+          ...task.options,
+          chunk_size: this.config.chunkSize * 1024 * 1024,
+        },
+        (error, result) => {
+          if (error) {
+            const errorMsg = error.message || 'Unknown error'
+            if (errorMsg.includes('413') || errorMsg.includes('File size too large')) {
+              reject(new Error('File too large for your Cloudinary plan. Consider upgrading for larger file support.'))
+            } else {
+              reject(error)
+            }
+          } else {
+            task.result = result
+            resolve()
+          }
+        }
+      )
+      
+      // Track progress (approximate since we can't track chunks directly)
+      let uploaded = 0
+      const totalSize = task.buffer.length
+      
+      uploadStream.on('pipe', () => {
+        task.onProgress?.(0)
+      })
+      
+      uploadStream.on('data', (chunk: Buffer) => {
+        uploaded += chunk.length
+        const progress = Math.min(Math.round((uploaded / totalSize) * 90), 90) // Cap at 90% until complete
         task.progress = progress
         task.onProgress?.(progress)
-      }
+      })
       
-      // Finalize upload
-      const result = await this.finalizeChunkedUpload(uploadId, task.options)
-      task.result = result
+      uploadStream.on('finish', () => {
+        task.progress = 100
+        task.onProgress?.(100)
+      })
       
-    } catch (error) {
-      // Clean up failed chunked upload
-      await this.abortChunkedUpload(uploadId)
-      throw error
-    }
+      // Pipe the buffer stream to the upload stream
+      bufferStream.pipe(uploadStream)
+    })
   }
   
-  private async initializeChunkedUpload(_options: any): Promise<string> {
-    // This is a simplified version - Cloudinary's actual chunked upload API 
-    // requires using their Upload API with specific headers
-    // For now, we'll use a mock implementation
-    return `chunked_${Date.now()}`
-  }
-  
-  private async uploadChunk(
-    _uploadId: string, 
-    _chunk: Buffer, 
-    _chunkIndex: number, 
-    _totalChunks: number
-  ): Promise<void> {
-    // Mock implementation - in production, this would use Cloudinary's 
-    // chunked upload endpoints
-    return new Promise(resolve => setTimeout(resolve, 100))
-  }
-  
-  private async finalizeChunkedUpload(_uploadId: string, _options: any): Promise<any> {
-    // Mock implementation - would finalize the chunked upload
-    return {
-      public_id: 'chunked_upload_result',
-      secure_url: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
-    }
-  }
-  
-  private async abortChunkedUpload(_uploadId: string): Promise<void> {
-    // Clean up incomplete chunked upload
-    return Promise.resolve()
-  }
   
   getStatus(uploadId: string): UploadTask | undefined {
     return this.activeUploads.get(uploadId) || 

@@ -241,18 +241,26 @@ collections: {
   },
 }
 
-### Upload Queue
+### Upload Queue (for Large Files)
 ```typescript
 collections: {
   media: {
     uploadQueue: {
       enabled: true,
       maxConcurrentUploads: 3,
-      chunkSize: 20, // MB
+      enableChunkedUploads: true,
+      largeFileThreshold: 100, // MB - files larger use Cloudinary's upload_large API
+      chunkSize: 20, // MB chunks
     },
   },
 }
 ```
+
+**Note on File Size Limits:**
+- Cloudinary has file size limits based on your plan
+- Free plans: typically 10MB for images, 100MB for videos
+- Paid plans: up to 1GB or more depending on plan
+- Files over 100MB automatically use Cloudinary's `upload_large` API
 
 ### Private Files with Signed URLs
 ```typescript

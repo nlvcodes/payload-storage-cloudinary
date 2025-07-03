@@ -57,7 +57,7 @@ export async function DynamicImageExample() {
   // Apply context-based transformation
   const heroDesktopUrl = getTransformationUrl({
     publicId: media.cloudinaryPublicId!,
-    version: media.cloudinaryVersion,
+    version: media.cloudinaryVersion || undefined,
     customTransformations: contexts.heroDesktop,
   })
 
@@ -69,7 +69,7 @@ export async function DynamicImageExample() {
           media="(max-width: 640px)"
           srcSet={getTransformationUrl({
             publicId: media.cloudinaryPublicId!,
-            version: media.cloudinaryVersion,
+            version: media.cloudinaryVersion || undefined,
             customTransformations: contexts.heroMobile,
           })}
         />
@@ -100,7 +100,7 @@ export async function PresetBasedExample() {
     // Apply the selected preset
     const presetUrl = getTransformationUrl({
       publicId: media.cloudinaryPublicId!,
-      version: media.cloudinaryVersion,
+      version: media.cloudinaryVersion || undefined,
       presetName: selectedPreset,
       presets: commonPresets,
     })
@@ -133,7 +133,7 @@ export function createVariantUrls(media: MediaWithVariants) {
     media.variants.forEach(variant => {
       variants[variant.name] = getTransformationUrl({
         publicId: media.cloudinaryPublicId!,
-        version: media.cloudinaryVersion,
+        version: media.cloudinaryVersion || undefined,
         customTransformations: variant.transformations,
       })
     })
