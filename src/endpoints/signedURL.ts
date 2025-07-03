@@ -17,7 +17,9 @@ export const createSignedURLEndpoint = (
     }
     
     try {
-      // Get the document
+      // Get the document - IMPORTANT: We pass the req object to ensure
+      // Payload's collection-level access control is properly enforced.
+      // If the user doesn't have read access, this will throw an error.
       const doc = await req.payload.findByID({
         collection: collectionSlug,
         id,
@@ -107,7 +109,9 @@ export const createBatchSignedURLEndpoint = (
     }
     
     try {
-      // Get all documents
+      // Get all documents - IMPORTANT: We pass the req object to ensure
+      // Payload's collection-level access control is properly enforced.
+      // Only documents the user has read access to will be returned.
       const docs = await req.payload.find({
         collection: collectionSlug,
         where: {

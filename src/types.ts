@@ -39,6 +39,15 @@ export interface SignedURLConfig {
   expiresIn?: number // seconds, default 3600 (1 hour)
   authTypes?: Array<'upload' | 'authenticated'>
   includeTransformations?: boolean
+  /**
+   * Custom authentication check for signed URLs.
+   * This runs AFTER Payload's collection-level access control.
+   * The document has already passed read access checks when this is called.
+   * Use this for additional business logic beyond standard access control.
+   * @param req - The request object with user information
+   * @param doc - The document that passed Payload's access control
+   * @returns Whether to allow generating a signed URL
+   */
   customAuthCheck?: (req: any, doc: any) => boolean | Promise<boolean>
 }
 
