@@ -16,11 +16,17 @@ A powerful Cloudinary storage adapter for Payload CMS v3 that replaces local fil
 ## Installation
 
 ```bash
+# From npm (once published)
 npm install payload-storage-cloudinary
 # or
 yarn add payload-storage-cloudinary
 # or
 pnpm add payload-storage-cloudinary
+
+# From GitHub (current method)
+pnpm add github:nlvcodes/payload-storage-cloudinary
+# or
+pnpm add https://github.com/nlvcodes/payload-storage-cloudinary.git
 ```
 
 ## Quick Start
@@ -49,7 +55,7 @@ export default buildConfig({
         api_secret: process.env.CLOUDINARY_API_SECRET,
       },
       collections: {
-        media: true, // Enable for media collection
+        media: true, // Simple config - just works!
       },
     }),
   ],
@@ -143,6 +149,59 @@ collections: {
 - [Custom Folder Field Example](./docs/custom-folder-field-example.md) - Complete implementation with dropdown
 - [Dynamic Folders Documentation](./docs/dynamic-folders.md) - All configuration options
 
+### Transformation Presets
+
+The plugin includes built-in presets and supports custom ones:
+
+```typescript
+import { cloudinaryStorage, commonPresets } from 'payload-storage-cloudinary'
+
+collections: {
+  media: {
+    transformations: {
+      presets: commonPresets, // Built-in presets
+      enablePresetSelection: true, // Show dropdown in admin UI
+    },
+  },
+}
+```
+
+**Built-in Common Presets:**
+- `thumbnail` - 150x150 thumb crop
+- `card` - 400x400 fill crop
+- `banner` - 1200x600 fill crop
+- `og-image` - 1200x630 Open Graph size
+- `avatar` - 200x200 circular crop focused on face
+- `blur` - Blurred preview image
+
+**Custom Presets:**
+```typescript
+const myPresets = {
+  ...commonPresets, // Include built-in presets
+  productHero: {
+    width: 1920,
+    height: 800,
+    crop: 'fill',
+    gravity: 'auto',
+    quality: 'auto:best',
+  },
+  productThumb: {
+    width: 300,
+    height: 300,
+    crop: 'thumb',
+  },
+}
+
+collections: {
+  media: {
+    transformations: {
+      presets: myPresets,
+      enablePresetSelection: true,
+    },
+  },
+}
+```
+
 ### Private Files
 ```typescript
 // Simple private files configuration:
@@ -151,7 +210,7 @@ collections: {
     privateFiles: true, // Files require signed URLs with 1-hour expiry
   },
 }
-
+```
 
 ### Transformations
 ```typescript
@@ -320,6 +379,29 @@ function ProductImage({ doc }) {
 }
 ```
 
+### Using Common Presets
+
+The plugin includes a set of common transformation presets that you can use immediately:
+
+```typescript
+import { getTransformationUrl, commonPresets } from 'payload-storage-cloudinary'
+
+// Use a built-in preset
+const thumbnailUrl = getTransformationUrl({
+  publicId: doc.cloudinaryPublicId,
+  version: doc.cloudinaryVersion,
+  presetName: 'thumbnail', // 150x150 thumb
+  presets: commonPresets,
+})
+
+const cardUrl = getTransformationUrl({
+  publicId: doc.cloudinaryPublicId,
+  version: doc.cloudinaryVersion,
+  presetName: 'card', // 400x400 fill
+  presets: commonPresets,
+})
+```
+
 ### Using Stored Transformation Presets
 
 If you enable preset selection in your config, users can choose a transformation preset during upload:
@@ -328,7 +410,7 @@ If you enable preset selection in your config, users can choose a transformation
 // Plugin configuration
 transformations: {
   enablePresetSelection: true,
-  presets: commonPresets, // thumbnail, card, banner
+  presets: commonPresets, // Shows dropdown with all presets
 }
 ```
 
@@ -582,10 +664,10 @@ MIT
 
 ## Support
 
-- [GitHub Issues](https://github.com/your-repo/issues)
+- [GitHub Issues](https://github.com/nlvcodes/payload-storage-cloudinary/issues)
 - [Documentation](./docs)
 - [Cloudinary Docs](https://cloudinary.com/documentation)
 
 ## Credits
 
-Built with ❤️ for the Payload CMS community.
+Built with ❤️ for the Payload CMS community by Nick Vogel.
