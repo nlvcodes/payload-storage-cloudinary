@@ -1,0 +1,40 @@
+# Source files
+src/
+dev/
+
+# Configuration files
+.eslintrc.js
+.prettierrc.json
+.swcrc
+tsconfig.json
+vitest.config.ts
+
+# Development files
+*.test.ts
+*.spec.ts
+coverage/
+.vitest/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Misc
+.DS_Store
+*.log
+.env*
+.cache/
+.temp/
+.tmp/
+
+# Keep only dist folder and essential files
+!dist/
+!package.json
+!README.md
+!LICENSE
