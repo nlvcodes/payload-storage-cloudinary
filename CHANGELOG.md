@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **getCloudinaryFolders Helper**: New helper function to fetch Cloudinary folders for custom implementations
+- **Automatic Folder Moves**: When folder changes, assets are moved in Cloudinary instead of duplicated
+- Complete example of custom folder selection field with dropdown and text input modes
+- Documentation for implementing custom folder selection UI
+- beforeChange hook to detect folder changes and use Cloudinary's rename API
+
+### Changed
+- Simplified approach to custom folder selection - users implement their own field components
+- Added example code showing the working pattern for folder selection
+
 ## [1.0.3] - 2025-01-03
 
 ### Removed

@@ -25,6 +25,18 @@ export default buildConfig({
                     name: 'alt',
                     type: 'text',
                 },
+                // Override the auto-generated cloudinaryFolder field with our custom selector
+                {
+                    name: 'cloudinaryFolder',
+                    type: 'text',
+                    label: 'Cloudinary Folder',
+                    admin: {
+                        components: {
+                            Field: '/src/components/field.tsx#selectField'
+                        },
+                        description: 'Select existing folder or create new one'
+                    }
+                }
             ],
         },
         {
@@ -96,6 +108,7 @@ export default buildConfig({
                         path: 'uploads',
                         enableDynamic: true,
                         fieldName: 'cloudinaryFolder',
+                        skipFieldCreation: true, // We're providing our own field
                     },
                     deleteFromCloudinary: false,
                     transformations: {
