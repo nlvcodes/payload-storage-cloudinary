@@ -8,6 +8,7 @@ import { createStaticHandler } from './handlers/staticHandler.js'
 import { createSignedURLEndpoint, createBatchSignedURLEndpoint } from './endpoints/signedURL.js'
 import { createUploadStatusEndpoint, createCancelUploadEndpoint } from './endpoints/uploadStatus.js'
 import { normalizeCollectionConfig, getFolderConfig, getTransformationConfig } from './helpers/normalizeConfig.js'
+import { createBeforeChangeHook } from './hooks/beforeChange.js'
 import { v2 as cloudinary } from 'cloudinary'
 
 export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
@@ -184,9 +185,21 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
         }
         
         
+        // Add beforeChange hook for folder moves if dynamic folders are enabled
+        const folderConfig = getFolderConfig(config)
+        const hooks = { ...(collection.hooks || {}) }
+        
+        if (folderConfig.enableDynamic) {
+          hooks.beforeChange = [
+            ...(hooks.beforeChange || []),
+            createBeforeChangeHook(collection.slug, config)
+          ]
+        }
+        
         return {
           ...collection,
           endpoints,
+          hooks,
         }
       })
     }
@@ -199,3 +212,4 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
 export type { CloudinaryStorageOptions, CloudinaryCollectionConfig, TransformationPreset, SignedURLConfig, FolderConfig } from './types.js'
 export { getTransformationUrl, commonPresets } from './helpers/transformations.js'
 export { generateSignedURL, generateDownloadURL, isAccessAllowed } from './helpers/signedURLs.js'
+export { getCloudinaryFolders } from './helpers/getCloudinaryFolders.js'

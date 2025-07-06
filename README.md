@@ -115,6 +115,7 @@ collections: {
     folder: {
       path: 'uploads', // Default folder
       enableDynamic: true, // Let users type folder path per upload
+      enableFolderSelection: true, // Show dropdown with existing Cloudinary folders
       fieldName: 'cloudinaryFolder', // Custom field name
     },
   },
@@ -130,6 +131,31 @@ collections: {
   },
 }
 ```
+
+**Folder Options:**
+- `enableDynamic`: Allows users to type custom folder paths
+- `path`: Default folder path
+- `fieldName`: Custom name for the folder field (default: 'cloudinaryFolder')
+- `skipFieldCreation`: Don't create the field automatically
+
+**Automatic Folder Moves:**
+When `enableDynamic` is true, the plugin automatically detects folder changes and moves the asset in Cloudinary instead of creating a duplicate. This uses Cloudinary's rename API to preserve the same asset while updating its location.
+
+**Custom Folder Selection Field:**
+
+If you want to add a dropdown selector for existing Cloudinary folders, you can implement a custom field component. The plugin provides a `getCloudinaryFolders` helper function:
+
+```typescript
+import { getCloudinaryFolders } from 'payload-storage-cloudinary'
+
+// In your custom field component
+const folders = await getCloudinaryFolders()
+```
+
+See the [folder selection field example](./docs/examples/folder-selection-field.md) for a complete implementation that allows users to:
+- Select from existing Cloudinary folders
+- Create new folders
+- See folders in a hierarchical tree structure
 
 For custom field implementation:
 
