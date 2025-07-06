@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.0.5] - 2025-01-06
 
 ### Added
 - **getCloudinaryFolders Helper**: New helper function to fetch Cloudinary folders for custom implementations
