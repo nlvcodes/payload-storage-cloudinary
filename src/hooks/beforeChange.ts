@@ -6,10 +6,41 @@ import { getFolderConfig } from '../helpers/normalizeConfig.js'
 export const createBeforeChangeHook = (
   collectionSlug: string,
   config: CloudinaryCollectionConfig
-): CollectionBeforeChangeHook => async ({ data, originalDoc, req }) => {
+): CollectionBeforeChangeHook => async ({ data, originalDoc, req, operation }) => {
   // Only process if we have an existing document with a Cloudinary public ID
   if (!originalDoc?.cloudinaryPublicId) {
     return data
+  }
+  
+  // Log what's happening
+  if (operation === 'update') {
+    req.payload.logger.info({
+      msg: 'BeforeChange hook - Cloudinary file preservation check',
+      collection: collectionSlug,
+      hasOriginalFile: !!originalDoc.cloudinaryPublicId,
+      hasNewFile: !!(data._file || data.file),
+      willPreserveFile: !data._file && !data.file,
+    })
+  }
+  
+  // IMPORTANT: Ensure we're not accidentally clearing the Cloudinary data
+  // This could cause the file to appear "deleted" even though it's still in Cloudinary
+  if (!data.cloudinaryPublicId && originalDoc.cloudinaryPublicId) {
+    req.payload.logger.warn({
+      msg: 'Preserving Cloudinary data - preventing accidental deletion',
+      collection: collectionSlug,
+      cloudinaryPublicId: originalDoc.cloudinaryPublicId,
+    })
+    
+    // Preserve all Cloudinary-related fields
+    data.cloudinaryPublicId = originalDoc.cloudinaryPublicId
+    data.cloudinaryUrl = originalDoc.cloudinaryUrl
+    data.cloudinaryResourceType = originalDoc.cloudinaryResourceType
+    data.cloudinaryFormat = originalDoc.cloudinaryFormat
+    data.cloudinaryVersion = originalDoc.cloudinaryVersion
+    data.url = originalDoc.url
+    data.originalUrl = originalDoc.originalUrl
+    data.thumbnailURL = originalDoc.thumbnailURL
   }
 
   const folderConfig = getFolderConfig(config)

@@ -17,6 +17,20 @@ export default buildConfig({
     collections: [
         {
             slug: 'media',
+            access: {
+                read: () => true, // Allow read attempts, we'll check in afterRead
+            },
+            hooks: {
+                afterRead: [
+                    ({doc, req}) => {
+                        // Check if this specific file requires authentication
+                        if ((doc.requiresSignedURL || doc.isPrivate) && !req.user) {
+                            return null
+                        }
+                        return doc
+                    },
+                ],
+            },
             upload: {
                 disableLocalStorage: true,
             },
@@ -37,6 +51,22 @@ export default buildConfig({
                         description: 'Select existing folder or create new one'
                     }
                 }
+            ],
+        },
+        {
+            slug: 'watermarked-media',
+            upload: {
+                disableLocalStorage: true,
+            },
+            fields: [
+                {
+                    name: 'alt',
+                    type: 'text',
+                },
+                {
+                    name: 'caption',
+                    type: 'text',
+                },
             ],
         },
         {
@@ -96,6 +126,7 @@ export default buildConfig({
         },
     },
     plugins: [
+        // @ts-ignore
         cloudinaryStorage({
             cloudConfig: {
                 cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
@@ -110,7 +141,7 @@ export default buildConfig({
                         fieldName: 'cloudinaryFolder',
                         skipFieldCreation: true, // We're providing our own field
                     },
-                    deleteFromCloudinary: false,
+                    deleteFromCloudinary: true,
                     transformations: {
                         default: {
                             quality: 'auto',
@@ -119,6 +150,32 @@ export default buildConfig({
                         presets: commonPresets,
                         enablePresetSelection: true,
                         preserveOriginal: true,
+                        // Add public transformation for watermarked previews
+                        publicTransformation: {
+                            enabled: true,
+                            fieldName: 'enablePublicPreview',
+                            typeFieldName: 'transformationType',
+                            watermark: {
+                                textFieldName: 'watermarkText',
+                                defaultText: 'PREVIEW',
+                                style: {
+                                    fontFamily: 'Verdana',
+                                    fontSize: 50,
+                                    fontWeight: 'bold',
+                                    letterSpacing: 15,
+                                    color: 'rgb:808080',
+                                    opacity: 50,
+                                    angle: -45,
+                                    position: 'center',
+                                },
+                            },
+                            blur: {
+                                effect: 'blur:2000',
+                                quality: 30,
+                                width: 600,
+                                height: 600,
+                            },
+                        },
                     },
                     uploadQueue: {
                         enabled: true,
@@ -128,11 +185,14 @@ export default buildConfig({
                         largeFileThreshold: 400,
                     },
                     resourceType: 'auto',
+                    privateFiles: {
+                        enabled: true,
+                        customAuthCheck: (req) => {
+                            return !!req.user
+                        }
+                    }
                 },
-                documents: {
-                    privateFiles: true, // Automatically enables signed URLs with 1 hour expiry
-                },
-            },
+            }
         }),
     ],
     secret: process.env.PAYLOAD_SECRET || 'test-secret-key',

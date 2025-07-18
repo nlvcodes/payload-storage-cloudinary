@@ -109,11 +109,19 @@ export async function PresetBasedExample() {
   }
 
   // Fallback to default URL
-  return <img src={media.url} alt={media.alt || ''} />
+  return <img src={media.url || ''} alt={media.alt || ''} />
 }
 
 // Example: Building a transformation system with variants
-interface MediaWithVariants extends typeof media {
+interface MediaWithVariants {
+  id: string
+  url?: string | null
+  thumbnailURL?: string | null
+  cloudinaryPublicId?: string | null
+  cloudinaryVersion?: number | null
+  cloudinaryResourceType?: string | null
+  cloudinaryFormat?: string | null
+  alt?: string | null
   variants?: {
     name: string
     transformations: Record<string, any>
@@ -249,7 +257,7 @@ export async function UserPreferenceExample({ userId }: { userId: string }) {
   }
 
   const transformations: Record<string, any> = {
-    quality: qualityMap[userPreferences.imageQuality] || 'auto',
+    quality: qualityMap[userPreferences.imageQuality as keyof typeof qualityMap] || 'auto',
     fetch_format: 'auto',
   }
 
@@ -260,7 +268,7 @@ export async function UserPreferenceExample({ userId }: { userId: string }) {
 
   const optimizedUrl = getTransformationUrl({
     publicId: media.cloudinaryPublicId!,
-    version: media.cloudinaryVersion,
+    version: media.cloudinaryVersion || undefined,
     customTransformations: transformations,
   })
 

@@ -68,6 +68,7 @@ export interface Config {
   blocks: {};
   collections: {
     media: Media;
+    'watermarked-media': WatermarkedMedia;
     documents: Document;
     products: Product;
     users: User;
@@ -78,6 +79,7 @@ export interface Config {
   collectionsJoins: {};
   collectionsSelect: {
     media: MediaSelect<false> | MediaSelect<true>;
+    'watermarked-media': WatermarkedMediaSelect<false> | WatermarkedMediaSelect<true>;
     documents: DocumentsSelect<false> | DocumentsSelect<true>;
     products: ProductsSelect<false> | ProductsSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
@@ -124,21 +126,55 @@ export interface UserAuthOperations {
 export interface Media {
   id: string;
   alt?: string | null;
+  /**
+   * Select existing folder or create new one
+   */
+  cloudinaryFolder?: string | null;
   cloudinaryPublicId?: string | null;
   cloudinaryUrl?: string | null;
   cloudinaryResourceType?: string | null;
   cloudinaryFormat?: string | null;
   cloudinaryVersion?: number | null;
   /**
-   * Folder path in Cloudinary (e.g., products/2024)
+   * Direct URL to the original file without transformations
    */
-  cloudinaryFolder?: string | null;
+  originalUrl?: string | null;
   /**
-   * Apply predefined image transformations
+   * URL with applied transformations
+   */
+  transformedUrl?: string | null;
+  /**
+   * Select multiple transformations to apply (they will be combined)
    */
   transformationPreset?:
-    | ('thumbnail' | 'card' | 'hero' | 'responsive' | 'watermarked' | 'blurred' | 'grayscale' | 'rounded')
+    | ('thumbnail' | 'card' | 'hero' | 'responsive' | 'watermarked' | 'blurred' | 'preview' | 'grayscale' | 'rounded')[]
     | null;
+  /**
+   * Private files require signed URLs to access
+   */
+  isPrivate?: boolean | null;
+  requiresSignedURL?: boolean | null;
+  /**
+   * Generate a public URL with transformations for this private file
+   */
+  enablePublicPreview?: boolean | null;
+  /**
+   * Choose the type of transformation for public preview
+   */
+  transformationType?: ('watermark' | 'blur') | null;
+  /**
+   * Text to display as watermark on public preview
+   */
+  watermarkText?: string | null;
+  /**
+   * Public URL with applied transformations
+   */
+  publicTransformationUrl?: string | null;
+  publicTransformationPublicId?: string | null;
+  /**
+   * Preview URL with selected transformation presets applied
+   */
+  previewUrl?: string | null;
   updatedAt: string;
   createdAt: string;
   url?: string | null;
@@ -156,30 +192,37 @@ export interface Media {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "documents".
+ * via the `definition` "watermarked-media".
  */
-export interface Document {
+export interface WatermarkedMedia {
   id: string;
   alt?: string | null;
-  cloudinaryPublicId?: string | null;
-  cloudinaryUrl?: string | null;
-  cloudinaryResourceType?: string | null;
-  cloudinaryFormat?: string | null;
-  cloudinaryVersion?: number | null;
-  /**
-   * Private files require signed URLs to access
-   */
-  isPrivate?: boolean | null;
-  requiresSignedURL?: boolean | null;
+  caption?: string | null;
   updatedAt: string;
   createdAt: string;
   url?: string | null;
   thumbnailURL?: string | null;
   filename?: string | null;
   mimeType?: string | null;
-  /**
-   * File size in bytes
-   */
+  filesize?: number | null;
+  width?: number | null;
+  height?: number | null;
+  focalX?: number | null;
+  focalY?: number | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "documents".
+ */
+export interface Document {
+  id: string;
+  alt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+  url?: string | null;
+  thumbnailURL?: string | null;
+  filename?: string | null;
+  mimeType?: string | null;
   filesize?: number | null;
   width?: number | null;
   height?: number | null;
@@ -241,6 +284,10 @@ export interface PayloadLockedDocument {
         value: string | Media;
       } | null)
     | ({
+        relationTo: 'watermarked-media';
+        value: string | WatermarkedMedia;
+      } | null)
+    | ({
         relationTo: 'documents';
         value: string | Document;
       } | null)
@@ -300,13 +347,42 @@ export interface PayloadMigration {
  */
 export interface MediaSelect<T extends boolean = true> {
   alt?: T;
+  cloudinaryFolder?: T;
   cloudinaryPublicId?: T;
   cloudinaryUrl?: T;
   cloudinaryResourceType?: T;
   cloudinaryFormat?: T;
   cloudinaryVersion?: T;
-  cloudinaryFolder?: T;
+  originalUrl?: T;
+  transformedUrl?: T;
   transformationPreset?: T;
+  isPrivate?: T;
+  requiresSignedURL?: T;
+  enablePublicPreview?: T;
+  transformationType?: T;
+  watermarkText?: T;
+  publicTransformationUrl?: T;
+  publicTransformationPublicId?: T;
+  previewUrl?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  url?: T;
+  thumbnailURL?: T;
+  filename?: T;
+  mimeType?: T;
+  filesize?: T;
+  width?: T;
+  height?: T;
+  focalX?: T;
+  focalY?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "watermarked-media_select".
+ */
+export interface WatermarkedMediaSelect<T extends boolean = true> {
+  alt?: T;
+  caption?: T;
   updatedAt?: T;
   createdAt?: T;
   url?: T;
@@ -325,13 +401,6 @@ export interface MediaSelect<T extends boolean = true> {
  */
 export interface DocumentsSelect<T extends boolean = true> {
   alt?: T;
-  cloudinaryPublicId?: T;
-  cloudinaryUrl?: T;
-  cloudinaryResourceType?: T;
-  cloudinaryFormat?: T;
-  cloudinaryVersion?: T;
-  isPrivate?: T;
-  requiresSignedURL?: T;
   updatedAt?: T;
   createdAt?: T;
   url?: T;

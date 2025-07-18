@@ -6,9 +6,23 @@ import { getSignedURLConfig, getTransformationConfig } from '../helpers/normaliz
 import { buildWatermarkTransformation, buildImageWatermarkTransformation, buildBlurTransformation } from '../helpers/watermark.js'
 
 export const createAfterChangeHook = (
-  _collectionSlug: string,
+  collectionSlug: string,
   config: CloudinaryCollectionConfig
-): CollectionAfterChangeHook => async ({ doc, previousDoc }) => {
+): CollectionAfterChangeHook => async ({ doc, previousDoc, req }) => {
+  // Debug logging for transformation changes
+  if (doc.cloudinaryPublicId) {
+    req.payload.logger.info({
+      msg: 'AfterChange hook triggered',
+      collection: collectionSlug,
+      cloudinaryPublicId: doc.cloudinaryPublicId,
+      hasCloudinaryUrl: !!doc.cloudinaryUrl,
+      operation: previousDoc ? 'update' : 'create',
+      previousUrl: previousDoc?.url,
+      currentUrl: doc.url,
+      urlChanged: previousDoc?.url !== doc.url,
+    })
+  }
+  
   // Check if we need to update URLs
   const privacyChanged = previousDoc?.isPrivate !== doc.isPrivate
   const transformConfig = getTransformationConfig(config)
@@ -27,6 +41,20 @@ export const createAfterChangeHook = (
   if (!doc.cloudinaryPublicId || (!privacyChanged && !presetChanged && !publicPreviewChanged && !watermarkChanged && !typeChanged)) {
     return doc
   }
+  
+  // Log what changes triggered the URL update
+  req.payload.logger.info({
+    msg: 'Updating URLs due to changes',
+    collection: collectionSlug,
+    cloudinaryPublicId: doc.cloudinaryPublicId,
+    changes: {
+      privacyChanged,
+      presetChanged,
+      publicPreviewChanged,
+      watermarkChanged,
+      typeChanged,
+    },
+  })
   
   const signedURLConfig = getSignedURLConfig(config)
   
@@ -142,47 +170,130 @@ export const createAfterChangeHook = (
     const fieldName = transformConfig.publicTransformation.fieldName || 'hasPublicTransformation'
     
     if (doc[fieldName] === true && doc.isPrivate) {
-      let publicTransformation
-      
-      // Get the transformation type
-      const typeFieldName = transformConfig.publicTransformation.typeFieldName || 'transformationType'
-      const transformationType = doc[typeFieldName] || 'watermark'
-      
-      if (transformationType === 'watermark' && transformConfig.publicTransformation.watermark) {
-        const watermarkFieldName = transformConfig.publicTransformation.watermark.textFieldName || 'watermarkText'
-        const watermarkText = doc[watermarkFieldName]
-        
-        // Build watermark transformation
-        if (transformConfig.publicTransformation.watermark.imageId) {
-          publicTransformation = buildImageWatermarkTransformation(transformConfig.publicTransformation.watermark)
-        } else {
-          publicTransformation = buildWatermarkTransformation(
-            transformConfig.publicTransformation.watermark,
-            watermarkText
-          )
-        }
-      } else if (transformationType === 'blur') {
-        // Build blur transformation
-        publicTransformation = buildBlurTransformation(transformConfig.publicTransformation.blur)
-      }
-      
-      // Public transformation URL should always be public (no auth)
-      doc.publicTransformationUrl = cloudinary.url(doc.cloudinaryPublicId, {
-        secure: true,
-        version: doc.cloudinaryVersion,
-        resource_type: doc.cloudinaryResourceType,
-        type: 'upload', // Always use 'upload' for public URLs
-        format: doc.cloudinaryFormat,
-        transformation: publicTransformation,
+      // Upload a permanently transformed version
+      req.payload.logger.info({
+        msg: 'Creating permanently transformed public version',
+        collection: collectionSlug,
+        transformationType: doc[typeFieldName] || 'watermark',
       })
+      
+      try {
+        // Delete old public transformation if it exists
+        if (doc.publicTransformationPublicId) {
+          try {
+            await cloudinary.uploader.destroy(doc.publicTransformationPublicId, {
+              resource_type: doc.cloudinaryResourceType || 'image',
+              invalidate: true,
+            })
+            req.payload.logger.info({
+              msg: 'Deleted old public transformation',
+              publicId: doc.publicTransformationPublicId,
+            })
+          } catch (error) {
+            req.payload.logger.warn({
+              msg: 'Failed to delete old public transformation',
+              error: error instanceof Error ? error.message : 'Unknown error',
+            })
+          }
+        }
+        
+        let publicTransformation
+        
+        // Get the transformation type
+        const typeFieldName = transformConfig.publicTransformation.typeFieldName || 'transformationType'
+        const transformationType = doc[typeFieldName] || 'watermark'
+        
+        if (transformationType === 'watermark' && transformConfig.publicTransformation.watermark) {
+          const watermarkFieldName = transformConfig.publicTransformation.watermark.textFieldName || 'watermarkText'
+          const watermarkText = doc[watermarkFieldName]
+          
+          // Build watermark transformation
+          if (transformConfig.publicTransformation.watermark.imageId) {
+            publicTransformation = buildImageWatermarkTransformation(transformConfig.publicTransformation.watermark)
+          } else {
+            publicTransformation = buildWatermarkTransformation(
+              transformConfig.publicTransformation.watermark,
+              watermarkText
+            )
+          }
+        } else if (transformationType === 'blur') {
+          // Build blur transformation
+          publicTransformation = buildBlurTransformation(transformConfig.publicTransformation.blur)
+        }
+        
+        // Create a new public ID for the transformed version
+        const publicTransformationPublicId = `${doc.cloudinaryPublicId}_public_${transformationType}`
+        
+        // Generate a URL with the transformation applied
+        const transformedUrl = cloudinary.url(doc.cloudinaryPublicId, {
+          secure: true,
+          transformation: publicTransformation,
+          format: doc.cloudinaryFormat || 'jpg',
+        })
+        
+        // Upload the transformed version as a new permanent image
+        const transformedResult = await cloudinary.uploader.upload(transformedUrl, {
+          public_id: publicTransformationPublicId,
+          resource_type: doc.cloudinaryResourceType || 'image',
+          overwrite: true,
+          invalidate: true,
+        })
+        
+        if (transformedResult && transformedResult.secure_url) {
+          // Store the public transformation URL and public ID
+          doc.publicTransformationUrl = transformedResult.secure_url
+          doc.publicTransformationPublicId = publicTransformationPublicId
+          
+          // Also set this as the preview URL since it's the permanently transformed version
+          doc.previewUrl = transformedResult.secure_url
+          
+          req.payload.logger.info({
+            msg: 'Public transformation created successfully',
+            publicId: publicTransformationPublicId,
+            url: doc.publicTransformationUrl,
+            previewUrl: doc.previewUrl,
+            docId: doc.id,
+            willReturn: true,
+          })
+        }
+      } catch (error) {
+        req.payload.logger.error({
+          msg: 'Failed to create public transformation',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
+        doc.publicTransformationUrl = null
+        doc.publicTransformationPublicId = null
+        doc.previewUrl = null
+      }
     } else {
+      // Clean up if public transformation is disabled
+      if (doc.publicTransformationPublicId) {
+        try {
+          await cloudinary.uploader.destroy(doc.publicTransformationPublicId, {
+            resource_type: doc.cloudinaryResourceType || 'image',
+            invalidate: true,
+          })
+          req.payload.logger.info({
+            msg: 'Deleted public transformation (disabled)',
+            publicId: doc.publicTransformationPublicId,
+          })
+        } catch (error) {
+          req.payload.logger.warn({
+            msg: 'Failed to delete public transformation',
+            error: error instanceof Error ? error.message : 'Unknown error',
+          })
+        }
+      }
       doc.publicTransformationUrl = null
+      doc.publicTransformationPublicId = null
+      doc.previewUrl = null
     }
   }
   
   // Generate preview URL with transformation presets if public transformation is enabled and any relevant field changed
+  // Skip if we already have a preview URL from the permanent public transformation
   if (transformConfig.publicTransformation?.enabled && doc.isPrivate && doc[publicPreviewFieldName] === true && 
-      (presetChanged || publicPreviewChanged || watermarkChanged || typeChanged)) {
+      (presetChanged || publicPreviewChanged || watermarkChanged || typeChanged) && !doc.previewUrl) {
     const selectedPresets = doc[presetFieldName]
     
     if (selectedPresets) {
@@ -258,6 +369,15 @@ export const createAfterChangeHook = (
         doc.previewUrl = null
       }
     }
+  }
+  
+  // Log what we're returning
+  if (doc.publicTransformationUrl) {
+    req.payload.logger.info({
+      msg: 'AfterChange hook returning doc with public transformation',
+      publicTransformationUrl: doc.publicTransformationUrl,
+      publicTransformationPublicId: doc.publicTransformationPublicId,
+    })
   }
   
   return doc

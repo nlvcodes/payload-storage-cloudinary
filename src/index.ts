@@ -11,6 +11,7 @@ import { normalizeCollectionConfig, getFolderConfig, getTransformationConfig } f
 import { createBeforeChangeHook } from './hooks/beforeChange.js'
 import { createAfterChangeHook } from './hooks/afterChange.js'
 import { createAfterReadHook } from './hooks/afterRead.js'
+import { createBeforeValidateHook } from './hooks/beforeValidate.js'
 import { v2 as cloudinary } from 'cloudinary'
 
 export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
@@ -221,6 +222,15 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                     condition: (data: any) => data.isPrivate === true && data[transformConfig.publicTransformation?.fieldName || 'hasPublicTransformation'] === true,
                   },
                 },
+                {
+                  name: 'publicTransformationPublicId',
+                  type: 'text' as const,
+                  label: 'Public Transformation ID',
+                  admin: {
+                    hidden: true,
+                    readOnly: true,
+                  },
+                },
                 // Add preview URL with transformation presets
                 {
                   name: 'previewUrl',
@@ -286,13 +296,17 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
         const transformConfig = getTransformationConfig(config)
         const hooks = { ...(collection.hooks || {}) }
         
-        // Add beforeChange hook for folder moves if dynamic folders are enabled
-        if (folderConfig.enableDynamic) {
-          hooks.beforeChange = [
-            ...(hooks.beforeChange || []),
-            createBeforeChangeHook(collection.slug, config)
-          ]
-        }
+        // Always add beforeValidate hook to preserve Cloudinary data during updates
+        hooks.beforeValidate = [
+          ...(hooks.beforeValidate || []),
+          createBeforeValidateHook(collection.slug, config)
+        ]
+        
+        // Always add beforeChange hook to handle file preservation and folder moves
+        hooks.beforeChange = [
+          ...(hooks.beforeChange || []),
+          createBeforeChangeHook(collection.slug, config)
+        ]
         
         // Add afterChange hook for privacy changes if private files are enabled
         if (config.privateFiles) {

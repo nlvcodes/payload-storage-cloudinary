@@ -5,11 +5,6 @@
       "static/chunks/main-app.js",
       "static/chunks/app/layout.js"
     ],
-    "/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/page.js"
-    ],
     "/(payload)/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -33,11 +28,6 @@
       "static/chunks/main-app.js",
       "static/css/app/(payload)/api/[...slug]/route.css",
       "static/chunks/app/(payload)/api/[...slug]/route.js"
-    ],
-    "/_not-found/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/_not-found/page.js"
     ]
   }
 }

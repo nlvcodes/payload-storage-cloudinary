@@ -183,9 +183,10 @@ collections: {
 3. The `transformedUrl` field contains the URL with all selected transformations
 4. Original file remains untouched in Cloudinary
 
-### Private Files with Public Previews
 
-Enable watermarked or blurred public previews for private files:
+### Private Files with Secure Public Previews
+
+Enable permanently watermarked or blurred public previews for private files. When enabled, the plugin creates a separate Cloudinary asset with transformations baked in, preventing removal via URL manipulation:
 
 ```typescript
 collections: {
@@ -217,10 +218,12 @@ collections: {
 
 **How it works:**
 1. Users mark files as private using the "Private File" checkbox
-2. They can enable "Public Preview" to generate a watermarked/blurred version
+2. They can enable "Public Preview" to generate a permanently transformed version
 3. Choose between "Watermark" or "Blur" transformation type
-4. The `publicTransformationUrl` provides a public URL with protection applied
-5. The `previewUrl` combines both transformation presets AND watermark/blur
+4. A separate Cloudinary asset is created with transformations baked in
+5. Both `publicTransformationUrl` and `previewUrl` point to this secure asset
+6. Watermarks/blurs cannot be removed by URL manipulation
+7. Changes to watermark text or type automatically recreate the public version
 
 ### Upload Queue for Large Files
 
@@ -460,6 +463,20 @@ The plugin now intelligently prevents re-uploads when you:
 - Update alt text or other fields
 - Modify folder paths (uses rename instead)
 - Toggle privacy settings
+
+### Deletion Protection
+The plugin protects against accidental file deletion from Cloudinary:
+- **During updates**: Files are protected when changing transformations, watermarks, or metadata
+- **During actual deletion**: Files are properly removed when you delete the document
+- **Why this matters**: Prevents a bug in Payload's cloud storage plugin that could delete files during updates
+- **Logs**: You'll see warnings when deletion is prevented during updates
+
+### Secure Public Previews
+Public previews now create permanent transformed copies:
+- **Watermarks/blurs are baked in**: Cannot be removed via URL manipulation
+- **Automatic management**: Old versions deleted when settings change
+- **Dual fields**: Both `publicTransformationUrl` and `previewUrl` populated
+- **Original protected**: Private original file remains untouched
 
 ### URL Structure
 - `url` always contains the original URL (when `preserveOriginal: true`)

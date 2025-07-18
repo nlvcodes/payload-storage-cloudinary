@@ -5,6 +5,42 @@ import { v2 as cloudinary } from 'cloudinary'
 export const createDeleteHandler = (
   options: CloudinaryStorageOptions,
 ): HandleDelete => async ({ collection, doc, filename }) => {
+  console.log('[Cloudinary Delete] Delete handler called for collection:', collection.slug)
+  console.log('[Cloudinary Delete] Filename:', filename)
+  console.log('[Cloudinary Delete] Has doc:', !!doc)
+  console.log('[Cloudinary Delete] Doc data:', doc ? {
+    id: doc.id,
+    cloudinaryPublicId: (doc as any).cloudinaryPublicId,
+    filename: doc.filename,
+  } : 'No doc')
+  console.log('[Cloudinary Delete] Stack trace:', new Error().stack)
+  
+  // SAFETY CHECK: If this is being called but the document still exists with Cloudinary data,
+  // this might be an erroneous call during an update operation.
+  if (doc && (doc as any).cloudinaryPublicId) {
+    // Check if this is coming from a beforeChange hook (update operation) vs afterDelete (actual deletion)
+    const stackTrace = new Error().stack || ''
+    const isUpdateOperation = stackTrace.includes('beforeChange') || stackTrace.includes('updateDocument')
+    const isDeleteOperation = stackTrace.includes('afterDelete') || stackTrace.includes('deleteByID')
+    
+    console.log('[Cloudinary Delete] Is update operation:', isUpdateOperation)
+    console.log('[Cloudinary Delete] Is delete operation:', isDeleteOperation)
+    console.log('[Cloudinary Delete] Has valid Cloudinary URL:', !!(doc as any).url)
+    
+    // Only prevent deletion if this is an update operation, not an actual delete
+    if (isUpdateOperation && !isDeleteOperation) {
+      console.warn('[Cloudinary Delete] WARNING: Delete called during update operation!')
+      console.warn('[Cloudinary Delete] Document still has valid Cloudinary data. Preventing deletion.')
+      console.warn('[Cloudinary Delete] This appears to be a bug in Payload cloud storage plugin.')
+      return
+    }
+    
+    // For actual deletions, log but allow to proceed
+    if (isDeleteOperation) {
+      console.log('[Cloudinary Delete] Legitimate delete operation detected. Proceeding with deletion.')
+    }
+  }
+  
   const collectionConfig = options.collections[collection.slug]
   
   if (!collectionConfig || typeof collectionConfig === 'boolean') {

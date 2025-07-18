@@ -33,23 +33,59 @@ export const createUploadHandler = (
     // In this case, we should not re-upload to Cloudinary
     if (data?.cloudinaryPublicId) {
       console.log('[Cloudinary Upload] Skipping upload - no new file provided, keeping existing Cloudinary asset')
+      
+      // Ensure required fields are present to prevent fetch attempts
+      if (!data.url && data.cloudinaryUrl) {
+        data.url = data.cloudinaryUrl
+      }
+      
+      // Preserve existing metadata
+      data.filename = data.filename || file.filename
+      data.filesize = data.filesize || file.filesize
+      data.mimeType = data.mimeType || file.mimeType
+      
       return // Return early without modifying the data
     }
     throw new Error('No file buffer provided for upload')
   }
   
-  // Additional check: if we have an existing cloudinaryPublicId and the same filename,
-  // this might be an update where Payload is re-sending the same file
-  if (data?.cloudinaryPublicId && data?.filename === file.filename) {
-    console.log('[Cloudinary Upload] Same file detected (existing publicId and same filename).')
-    console.log('[Cloudinary Upload] Skipping re-upload to Cloudinary.')
-    // Skip the upload and return early - Payload is re-sending the same file
-    return
+  // Additional check: if we have an existing cloudinaryPublicId,
+  // this might be an update where Payload is re-sending the same file or a similar file
+  if (data?.cloudinaryPublicId) {
+    console.log('[Cloudinary Upload] Existing file detected with publicId:', data.cloudinaryPublicId)
+    console.log('[Cloudinary Upload] Current filename:', file.filename, 'Stored filename:', data.filename)
+    
+    // Check if this is the same file or just an update
+    const isSameFile = data.filename === file.filename || 
+                      (data.filename && file.filename && data.filename.replace(/[- ]\d+\./g, '.') === file.filename.replace(/[- ]\d+\./g, '.'))
+    
+    if (isSameFile) {
+      console.log('[Cloudinary Upload] Same file detected. Skipping re-upload to Cloudinary.')
+      
+      // IMPORTANT: We need to ensure all required fields are present even when skipping upload
+      // This prevents Payload from trying to fetch the file for processing
+      if (!data.url && data.cloudinaryUrl) {
+        data.url = data.cloudinaryUrl
+      }
+      
+      // Ensure file metadata is present
+      data.filename = file.filename || data.filename
+      data.filesize = file.filesize || data.filesize
+      data.mimeType = file.mimeType || data.mimeType
+      
+      // Skip the upload and return early - Payload is re-sending the same file
+      return
+    } else {
+      console.log('[Cloudinary Upload] Different file detected. This will replace the existing file in Cloudinary.')
+      // Note: The old file will remain in Cloudinary unless manually deleted
+      // This is by design to prevent accidental data loss
+    }
   }
   
   try {
     const uploadOptions = buildUploadOptions(config, file.filename, data)
     console.log('[Cloudinary Upload] Upload options:', JSON.stringify(uploadOptions, null, 2))
+    console.log('[Cloudinary Upload] Collection config:', JSON.stringify(config, null, 2))
     
     // Check if upload queue is enabled
     if (config.uploadQueue?.enabled) {
@@ -220,6 +256,7 @@ function processUploadResult(result: any, data: any, file: any, config: Cloudina
     // Store the main URL - this will be the same as originalUrl if preserveOriginal is true
     // Transformations will be applied dynamically via afterRead hook
     data.url = originalUrl
+    
     
     // Store additional metadata that Payload expects
     data.filename = file.filename
@@ -405,6 +442,7 @@ function buildUploadOptions(
       options.transformation = transformations
     }
   }
+  
   
   return options
 }
