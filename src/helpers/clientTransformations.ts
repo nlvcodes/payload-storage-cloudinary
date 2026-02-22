@@ -20,45 +20,47 @@ export interface TransformOptions {
  */
 export function getTransformationUrl(options: TransformOptions): string {
   const { publicId, version, presetName, presets, customTransformations, cloudName } = options
-  
+
   // Get cloud name from environment if not provided
   const cloud = cloudName || process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || ''
 
   if (!cloud) {
-    throw new Error('Cloud name is required. Provide it via the cloudName option or set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME.')
+    throw new Error(
+      'Cloud name is required. Provide it via the cloudName option or set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME.',
+    )
   }
-  
+
   let transformations: Record<string, any> = {}
-  
+
   // Apply preset transformations if specified
   if (presetName && presets) {
-    const preset = presets.find(p => p.name === presetName)
+    const preset = presets.find((p) => p.name === presetName)
     if (preset) {
       transformations = { ...preset.transformations }
     }
   }
-  
+
   // Merge with custom transformations
   if (customTransformations) {
     transformations = { ...transformations, ...customTransformations }
   }
-  
+
   // Build transformation string
   const transformString = buildTransformationString(transformations)
-  
+
   // Build the URL
   let url = `https://res.cloudinary.com/${cloud}/image/upload`
-  
+
   if (transformString) {
     url += `/${transformString}`
   }
-  
+
   if (version) {
     url += `/v${version}`
   }
-  
+
   url += `/${publicId}`
-  
+
   return url
 }
 
@@ -69,9 +71,9 @@ function buildTransformationString(transformations: Record<string, any>): string
   if (!transformations || Object.keys(transformations).length === 0) {
     return ''
   }
-  
+
   const parts: string[] = []
-  
+
   Object.entries(transformations).forEach(([key, value]) => {
     // Map common transformation keys to Cloudinary format
     switch (key) {
@@ -149,7 +151,7 @@ function buildTransformationString(transformations: Record<string, any>): string
         parts.push(`${key}_${value}`)
     }
   })
-  
+
   return parts.join(',')
 }
 
@@ -218,7 +220,7 @@ export const commonPresets: TransformationPreset[] = [
       gravity: 'auto',
     },
   },
-  
+
   // Social media presets
   {
     name: 'og-image',
@@ -270,7 +272,7 @@ export const commonPresets: TransformationPreset[] = [
       gravity: 'auto',
     },
   },
-  
+
   // Aspect ratio presets
   {
     name: 'square',
@@ -316,7 +318,7 @@ export const commonPresets: TransformationPreset[] = [
       gravity: 'auto',
     },
   },
-  
+
   // Effect presets
   {
     name: 'blur',
@@ -373,7 +375,7 @@ export const commonPresets: TransformationPreset[] = [
       effect: 'vignette:50',
     },
   },
-  
+
   // Optimization presets
   {
     name: 'auto-optimize',
@@ -426,13 +428,14 @@ export const commonPresets: TransformationPreset[] = [
       flags: 'progressive',
     },
   },
-  
+
   // Special presets
   {
     name: 'avatar',
     label: 'Avatar',
     category: 'size',
-    description: 'Circular avatar with face detection (200x200) - Note: Only one size preset will be applied',
+    description:
+      'Circular avatar with face detection (200x200) - Note: Only one size preset will be applied',
     transformations: {
       width: 200,
       height: 200,
@@ -445,7 +448,8 @@ export const commonPresets: TransformationPreset[] = [
     name: 'profile-header',
     label: 'Profile Header',
     category: 'size',
-    description: 'Profile header/cover image (1500x500) - Note: Only one size preset will be applied',
+    description:
+      'Profile header/cover image (1500x500) - Note: Only one size preset will be applied',
     transformations: {
       width: 1500,
       height: 500,

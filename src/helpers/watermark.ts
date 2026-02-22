@@ -1,7 +1,7 @@
 import type { TransformationConfig } from '../types.js'
 
 export function buildBlurTransformation(
-  blurConfig?: NonNullable<TransformationConfig['publicTransformation']>['blur']
+  blurConfig?: NonNullable<TransformationConfig['publicTransformation']>['blur'],
 ): Record<string, any> {
   return {
     effect: blurConfig?.effect || 'blur:2000',
@@ -14,7 +14,7 @@ export function buildBlurTransformation(
 
 export function buildWatermarkTransformation(
   watermarkConfig: NonNullable<TransformationConfig['publicTransformation']>['watermark'],
-  watermarkText?: string
+  watermarkText?: string,
 ): any[] {
   if (!watermarkConfig) {
     return []
@@ -22,7 +22,7 @@ export function buildWatermarkTransformation(
 
   const text = watermarkText || watermarkConfig.defaultText || 'WATERMARK'
   const style = watermarkConfig.style || {}
-  
+
   // Build the transformation array following Cloudinary's chained transformation syntax
   const transformations: any[] = [
     // First, scale the image if needed
@@ -47,19 +47,19 @@ export function buildWatermarkTransformation(
       gravity: style.position || 'center',
     },
   ]
-  
+
   return transformations
 }
 
 export function buildImageWatermarkTransformation(
-  watermarkConfig: NonNullable<TransformationConfig['publicTransformation']>['watermark']
+  watermarkConfig: NonNullable<TransformationConfig['publicTransformation']>['watermark'],
 ): any[] {
   if (!watermarkConfig || !watermarkConfig.imageId) {
     return []
   }
 
   const style = watermarkConfig.style || {}
-  
+
   // Build the transformation for image overlay
   const transformations: any[] = [
     {
@@ -70,6 +70,6 @@ export function buildImageWatermarkTransformation(
       flags: ['layer_apply'],
     },
   ]
-  
+
   return transformations
 }

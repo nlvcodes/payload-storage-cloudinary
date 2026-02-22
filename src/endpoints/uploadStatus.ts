@@ -11,14 +11,14 @@ export const createUploadStatusEndpoint = (collectionSlug: string): Endpoint => 
 
     const queue = queueManager.getQueue(collectionSlug)
     const id = req.routeParams?.id as string | undefined
-    
+
     if (id) {
       // Get status for specific upload
       const status = queue.getStatus(id)
       if (!status) {
         return Response.json({ error: 'Upload not found' }, { status: 404 })
       }
-      
+
       return Response.json({
         id: status.id,
         filename: status.filename,
@@ -28,11 +28,11 @@ export const createUploadStatusEndpoint = (collectionSlug: string): Endpoint => 
         error: status.error,
       })
     }
-    
+
     // Get all upload statuses
     const allStatus = queue.getAllStatus()
     return Response.json({
-      uploads: allStatus.map(status => ({
+      uploads: allStatus.map((status) => ({
         id: status.id,
         filename: status.filename,
         size: status.size,
@@ -54,20 +54,23 @@ export const createCancelUploadEndpoint = (collectionSlug: string): Endpoint => 
 
     const queue = queueManager.getQueue(collectionSlug)
     const id = req.routeParams?.id as string | undefined
-    
+
     if (!id) {
       return Response.json({ error: 'Upload ID required' }, { status: 400 })
     }
-    
+
     const cancelled = queue.cancelUpload(id)
-    
+
     if (cancelled) {
       return Response.json({ success: true, message: 'Upload cancelled' })
     } else {
-      return Response.json({ 
-        success: false, 
-        message: 'Unable to cancel upload. It may have already started or completed.' 
-      }, { status: 400 })
+      return Response.json(
+        {
+          success: false,
+          message: 'Unable to cancel upload. It may have already started or completed.',
+        },
+        { status: 400 },
+      )
     }
   },
 })

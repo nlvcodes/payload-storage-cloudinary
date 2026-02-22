@@ -84,22 +84,22 @@ export interface CloudinaryCollectionConfig {
   useFilename?: boolean
   uniqueFilename?: boolean
   resourceType?: 'image' | 'video' | 'raw' | 'auto'
-  
+
   // Organized folder configuration
   folder?: FolderConfig | string // string for backward compatibility
-  
+
   // Organized transformation configuration
   transformations?: TransformationConfig | Record<string, any> // Record for backward compatibility
-  
+
   // Upload queue configuration
   uploadQueue?: UploadQueueConfig
-  
+
   // Security configuration - privateFiles automatically enables signed URLs
   privateFiles?: boolean | SignedURLConfig
-  
+
   // Deletion behavior
   deleteFromCloudinary?: boolean // Whether to delete files from Cloudinary when deleted in Payload (default: true)
-  
+
   // Legacy fields for backward compatibility (will be mapped to new structure)
   enableDynamicFolders?: boolean
   folderField?: string
@@ -113,7 +113,9 @@ export interface CloudinaryStorageOptions {
   }
 }
 
-export type CloudinaryStoragePlugin = (options: CloudinaryStorageOptions) => (config: Config) => Config
+export type CloudinaryStoragePlugin = (
+  options: CloudinaryStorageOptions,
+) => (config: Config) => Config
 
 // Shared Cloudinary interfaces to replace `any` types across handlers
 

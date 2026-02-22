@@ -1,6 +1,6 @@
 /**
  * Client-side exports for payload-storage-cloudinary
- * 
+ *
  * Import from 'payload-storage-cloudinary/client' to avoid server dependencies in client components
  */
 

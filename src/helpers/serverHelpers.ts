@@ -43,11 +43,11 @@ export async function getSignedURL({
       user, // Pass user for access control
       depth: 0,
     })
-    
+
     if (!doc) {
       throw new Error('Document not found')
     }
-    
+
     // Check if this file requires signed URLs
     if (!doc.requiresSignedURL && !doc.isPrivate) {
       // Public file - apply transformations directly to URL if provided
@@ -57,7 +57,7 @@ export async function getSignedURL({
       }
       return baseUrl
     }
-    
+
     // Get collection config if available
     let signedURLConfig: SignedURLConfig | undefined
     if (pluginOptions?.collections?.[collection]) {
@@ -66,16 +66,19 @@ export async function getSignedURL({
       const config = normalizeCollectionConfig(rawConfig)
       signedURLConfig = getSignedURLConfig(config)
     }
-    
+
     // Generate signed URL with transformations
-    return generateCloudinarySignedURL({
-      publicId: doc.cloudinaryPublicId,
-      version: doc.cloudinaryVersion,
-      resourceType: doc.cloudinaryResourceType || 'image',
-      format: doc.cloudinaryFormat,
-      transformations,
-      expiresIn: signedURLConfig?.expiresIn,
-    }, signedURLConfig)
+    return generateCloudinarySignedURL(
+      {
+        publicId: doc.cloudinaryPublicId,
+        version: doc.cloudinaryVersion,
+        resourceType: doc.cloudinaryResourceType || 'image',
+        format: doc.cloudinaryFormat,
+        transformations,
+        expiresIn: signedURLConfig?.expiresIn,
+      },
+      signedURLConfig,
+    )
   } catch (error) {
     console.error('Failed to generate signed URL:', error)
     return null
@@ -92,9 +95,11 @@ export async function getSignedURLs({
   user,
   transformations,
   pluginOptions,
-}: Omit<ServerSignedURLOptions, 'docId'> & { docIds: string[] }): Promise<Record<string, string | null>> {
+}: Omit<ServerSignedURLOptions, 'docId'> & { docIds: string[] }): Promise<
+  Record<string, string | null>
+> {
   const results: Record<string, string | null> = {}
-  
+
   // Process in parallel for better performance — individual failures return null
   await Promise.all(
     docIds.map(async (docId) => {
@@ -107,9 +112,9 @@ export async function getSignedURLs({
         pluginOptions,
       }).catch(() => null)
       results[docId] = url
-    })
+    }),
   )
-  
+
   return results
 }
 
@@ -119,7 +124,7 @@ export async function getSignedURLs({
  */
 export function applyTransformationsToUrl(
   url: string,
-  transformations: Record<string, any>
+  transformations: Record<string, any>,
 ): string {
   // Parse the URL to identify Cloudinary structure
   const urlParts = url.split('/upload/')
@@ -127,7 +132,7 @@ export function applyTransformationsToUrl(
     // Not a standard Cloudinary URL, return as-is
     return url
   }
-  
+
   // Build transformation string
   const transformString = Object.entries(transformations)
     .map(([key, value]) => {
@@ -146,7 +151,7 @@ export function applyTransformationsToUrl(
       if (key === 'overlay') key = 'l'
       if (key === 'underlay') key = 'u'
       if (key === 'fetch_format') key = 'f_auto'
-      
+
       // Handle special values
       if (key === 'f_auto') return 'f_auto'
       if (key === 'q' && value === 'auto') return 'q_auto'
@@ -154,14 +159,14 @@ export function applyTransformationsToUrl(
       if (key === 'q' && value === 'auto:good') return 'q_auto:good'
       if (key === 'q' && value === 'auto:eco') return 'q_auto:eco'
       if (key === 'q' && value === 'auto:low') return 'q_auto:low'
-      
+
       return `${key}_${value}`
     })
     .join(',')
-  
+
   // Check if URL already has transformations
   const [baseUrl, resourcePath] = urlParts
-  
+
   // For authenticated URLs, we need to insert transformations after the auth token
   if (resourcePath.includes('/authenticated/')) {
     // Pattern: authenticated/s--TOKEN--/TRANSFORMATIONS/VERSION/PUBLIC_ID
@@ -172,7 +177,7 @@ export function applyTransformationsToUrl(
       return `${baseUrl}/upload/${authParts.join('/')}`
     }
   }
-  
+
   // For public URLs, insert transformations at the beginning
   return `${baseUrl}/upload/${transformString}/${resourcePath}`
 }
@@ -190,14 +195,14 @@ export function requiresSignedURL(doc: any): boolean {
  */
 function extractTransformationsFromUrl(url: string): Record<string, any> | undefined {
   if (!url) return undefined
-  
+
   // Match the transformation string between /upload/ and /v{version}
-  const match = url.match(/\/upload\/([^\/]+)\/v\d+/)
+  const match = url.match(/\/upload\/([^/]+)\/v\d+/)
   if (!match || !match[1]) return undefined
-  
+
   const transformString = match[1]
   const transformations: Record<string, any> = {}
-  
+
   // Parse transformation string (e.g., "c_fill,w_200,h_200,q_auto,f_auto")
   const parts = transformString.split(',')
   for (const part of parts) {
@@ -219,37 +224,68 @@ function extractTransformationsFromUrl(url: string): Record<string, any> | undef
       transformations.effect = part.replace('e_', '')
       continue
     }
-    
+
     // Standard key_value pattern
     const underscoreIndex = part.indexOf('_')
     if (underscoreIndex === -1) continue
-    
+
     const key = part.substring(0, underscoreIndex)
     const value = part.substring(underscoreIndex + 1)
-    
+
     if (key && value) {
       // Map single letter keys to full names
       switch (key) {
-        case 'w': transformations.width = isNaN(Number(value)) ? value : Number(value); break
-        case 'h': transformations.height = isNaN(Number(value)) ? value : Number(value); break
-        case 'c': transformations.crop = value; break
-        case 'q': transformations.quality = value; break
-        case 'f': transformations.fetch_format = value; break
-        case 'g': transformations.gravity = value; break
-        case 'dpr': transformations.dpr = value; break
-        case 'e': transformations.effect = value; break
-        case 'r': transformations.radius = value; break
-        case 'a': transformations.angle = value; break
-        case 'o': transformations.opacity = value; break
-        case 'bo': transformations.border = value; break
-        case 'b': transformations.background = value; break
-        case 'l': transformations.overlay = value; break
-        case 'u': transformations.underlay = value; break
-        default: transformations[key] = value
+        case 'w':
+          transformations.width = isNaN(Number(value)) ? value : Number(value)
+          break
+        case 'h':
+          transformations.height = isNaN(Number(value)) ? value : Number(value)
+          break
+        case 'c':
+          transformations.crop = value
+          break
+        case 'q':
+          transformations.quality = value
+          break
+        case 'f':
+          transformations.fetch_format = value
+          break
+        case 'g':
+          transformations.gravity = value
+          break
+        case 'dpr':
+          transformations.dpr = value
+          break
+        case 'e':
+          transformations.effect = value
+          break
+        case 'r':
+          transformations.radius = value
+          break
+        case 'a':
+          transformations.angle = value
+          break
+        case 'o':
+          transformations.opacity = value
+          break
+        case 'bo':
+          transformations.border = value
+          break
+        case 'b':
+          transformations.background = value
+          break
+        case 'l':
+          transformations.overlay = value
+          break
+        case 'u':
+          transformations.underlay = value
+          break
+        default:
+          transformations[key] = value
       }
     }
   }
-  
+
   return Object.keys(transformations).length > 0 ? transformations : undefined
 }
 
@@ -265,7 +301,7 @@ export async function getImageURL(
     user?: any
     transformations?: Record<string, any>
     pluginOptions?: any
-  }
+  },
 ): Promise<string | null> {
   // If it's a private file and we have payload instance, generate signed URL
   if (requiresSignedURL(doc) && options?.payload && options?.collection) {
@@ -278,15 +314,15 @@ export async function getImageURL(
       pluginOptions: options.pluginOptions,
     })
   }
-  
+
   // Public file - apply transformations if provided
   const baseUrl = doc?.url || doc?.cloudinaryUrl
   if (!baseUrl) return null
-  
+
   if (options?.transformations) {
     return applyTransformationsToUrl(baseUrl, options.transformations)
   }
-  
+
   return baseUrl
 }
 
@@ -302,26 +338,26 @@ export async function getPrivateImageURL(
     user?: any
     includeTransformations?: boolean
     pluginOptions?: any
-  }
+  },
 ): Promise<string | null> {
   if (!doc) return null
-  
+
   const needsSignedUrl = requiresSignedURL(doc)
-  
+
   // For public files, return the appropriate URL
   if (!needsSignedUrl) {
     return options.includeTransformations && doc?.transformedUrl
       ? doc.transformedUrl
       : doc?.url || doc?.cloudinaryUrl
   }
-  
+
   // For private files, generate signed URL with optional transformations
   // Extract transformations from transformedUrl if requested
   let transformations: Record<string, any> | undefined
   if (options.includeTransformations && doc?.transformedUrl) {
     transformations = extractTransformationsFromUrl(doc.transformedUrl)
   }
-  
+
   const signedUrl = await getSignedURL({
     payload: options.payload,
     collection: options.collection,
@@ -330,7 +366,7 @@ export async function getPrivateImageURL(
     transformations,
     pluginOptions: options.pluginOptions,
   })
-  
+
   // Always return the signed URL for private files
   return signedUrl
 }
@@ -340,10 +376,10 @@ export async function getPrivateImageURL(
  */
 export function getPublicPreviewURL(
   doc: any,
-  includeTransformations: boolean = false
+  includeTransformations: boolean = false,
 ): string | null {
   if (!doc) return null
-  
+
   return includeTransformations && doc?.previewUrl
     ? doc.previewUrl
     : doc?.publicTransformationURL || doc?.thumbnailURL
@@ -362,7 +398,7 @@ export async function getPremiumImageURL(
     isAuthenticated: boolean
     includeTransformations?: boolean
     pluginOptions?: any
-  }
+  },
 ): Promise<{
   url: string | null
   isPreview: boolean
@@ -371,32 +407,33 @@ export async function getPremiumImageURL(
   if (!doc) {
     return { url: null, isPreview: false, requiresAuth: false }
   }
-  
+
   const needsSignedUrl = requiresSignedURL(doc)
-  
+
   // For public files, just return the URL
   if (!needsSignedUrl) {
-    const url = options.includeTransformations && doc?.transformedUrl
-      ? doc.transformedUrl
-      : doc?.url || doc?.cloudinaryUrl
-      
+    const url =
+      options.includeTransformations && doc?.transformedUrl
+        ? doc.transformedUrl
+        : doc?.url || doc?.cloudinaryUrl
+
     return { url, isPreview: false, requiresAuth: false }
   }
-  
+
   // For private files, check authentication
   if (!options.isAuthenticated) {
     // Return public preview
     const previewUrl = getPublicPreviewURL(doc, options.includeTransformations)
     return { url: previewUrl, isPreview: true, requiresAuth: true }
   }
-  
+
   // User is authenticated - get signed URL with optional transformations
   // Extract transformations from transformedUrl if requested
   let transformations: Record<string, any> | undefined
   if (options.includeTransformations && doc?.transformedUrl) {
     transformations = extractTransformationsFromUrl(doc.transformedUrl)
   }
-  
+
   const signedUrl = await getSignedURL({
     payload: options.payload,
     collection: options.collection,
@@ -405,9 +442,9 @@ export async function getPremiumImageURL(
     transformations,
     pluginOptions: options.pluginOptions,
   })
-  
+
   // Always use signed URL for private files
   const finalUrl = signedUrl || doc?.url
-    
+
   return { url: finalUrl, isPreview: false, requiresAuth: true }
 }

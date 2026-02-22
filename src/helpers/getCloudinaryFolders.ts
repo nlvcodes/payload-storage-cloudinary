@@ -28,18 +28,16 @@ async function getSubfolders(folderPath: string) {
 
 async function getAllFoldersRecursively(path: string = '', depth: number = 0): Promise<any[]> {
   const allFolders = []
-  
+
   try {
-    const folders = path === '' 
-      ? await getAllCloudinaryFolders()
-      : await getSubfolders(path)
+    const folders = path === '' ? await getAllCloudinaryFolders() : await getSubfolders(path)
 
     for (const folder of folders) {
       const indent = '  '.repeat(depth)
       const icon = depth > 0 ? '└─ ' : ''
 
       const displayName = depth > 0 ? folder.path : folder.name
-      
+
       allFolders.push({
         label: `${indent}${icon}${displayName}`,
         value: folder.path,
@@ -51,7 +49,7 @@ async function getAllFoldersRecursively(path: string = '', depth: number = 0): P
   } catch (error) {
     console.error(`Error fetching folders for path "${path}":`, error)
   }
-  
+
   return allFolders
 }
 
@@ -62,25 +60,25 @@ async function getAllFoldersRecursively(path: string = '', depth: number = 0): P
  */
 export async function getCloudinaryFolders(useCache: boolean = true): Promise<OptionObject[]> {
   const now = Date.now()
-  
+
   // Check if cache is still valid
-  if (useCache && cachedFolders && (now - cacheTimestamp) < CACHE_DURATION) {
+  if (useCache && cachedFolders && now - cacheTimestamp < CACHE_DURATION) {
     return cachedFolders
   }
-  
+
   // Fetch fresh data
   const rootFolder = {
     label: '/ (root)',
-    value: ''
+    value: '',
   }
-  
+
   try {
     const folders = [rootFolder, ...(await getAllFoldersRecursively())]
-    
+
     // Update cache
     cachedFolders = folders
     cacheTimestamp = now
-    
+
     return folders
   } catch (error) {
     console.error('Error fetching Cloudinary folders:', error)

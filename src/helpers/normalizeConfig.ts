@@ -1,21 +1,28 @@
-import type { CloudinaryCollectionConfig, FolderConfig, TransformationConfig, SignedURLConfig } from '../types.js'
+import type {
+  CloudinaryCollectionConfig,
+  FolderConfig,
+  TransformationConfig,
+  SignedURLConfig,
+} from '../types.js'
 
 /**
  * Normalizes the collection configuration to handle both legacy and new formats
  */
-export function normalizeCollectionConfig(config: CloudinaryCollectionConfig): CloudinaryCollectionConfig {
+export function normalizeCollectionConfig(
+  config: CloudinaryCollectionConfig,
+): CloudinaryCollectionConfig {
   const normalized = { ...config }
-  
+
   // Handle folder configuration
   if (typeof config.folder === 'string' || config.enableDynamicFolders || config.folderField) {
     const folderConfig: FolderConfig = {}
-    
+
     if (typeof config.folder === 'string') {
       folderConfig.path = config.folder
     } else if (typeof config.folder === 'object') {
       Object.assign(folderConfig, config.folder)
     }
-    
+
     // Map legacy fields
     if (config.enableDynamicFolders !== undefined) {
       folderConfig.enableDynamic = config.enableDynamicFolders
@@ -23,25 +30,29 @@ export function normalizeCollectionConfig(config: CloudinaryCollectionConfig): C
     if (config.folderField !== undefined) {
       folderConfig.fieldName = config.folderField
     }
-    
+
     normalized.folder = folderConfig
   }
-  
+
   // Handle transformation configuration
   if (config.transformations) {
     const transformConfig: TransformationConfig = {}
-    
-    if (config.transformations && typeof config.transformations === 'object' && !('default' in config.transformations)) {
+
+    if (
+      config.transformations &&
+      typeof config.transformations === 'object' &&
+      !('default' in config.transformations)
+    ) {
       // Legacy format - direct transformations
       transformConfig.default = config.transformations as Record<string, any>
     } else if (config.transformations && typeof config.transformations === 'object') {
       // New format
       Object.assign(transformConfig, config.transformations)
     }
-    
+
     normalized.transformations = transformConfig
   }
-  
+
   // Handle private files and signed URLs configuration
   if (config.signedURLs) {
     // Legacy signedURLs field - map to privateFiles
@@ -54,7 +65,7 @@ export function normalizeCollectionConfig(config: CloudinaryCollectionConfig): C
       expiresIn: 3600, // Default 1 hour
     }
   }
-  
+
   return normalized
 }
 
@@ -72,7 +83,11 @@ export function getFolderConfig(config: CloudinaryCollectionConfig): FolderConfi
  * Helper to get transformation configuration
  */
 export function getTransformationConfig(config: CloudinaryCollectionConfig): TransformationConfig {
-  if (config.transformations && typeof config.transformations === 'object' && !('default' in config.transformations)) {
+  if (
+    config.transformations &&
+    typeof config.transformations === 'object' &&
+    !('default' in config.transformations)
+  ) {
     return { default: config.transformations as Record<string, any> }
   }
   return (config.transformations as TransformationConfig) || {}
@@ -81,7 +96,9 @@ export function getTransformationConfig(config: CloudinaryCollectionConfig): Tra
 /**
  * Helper to get signed URL configuration
  */
-export function getSignedURLConfig(config: CloudinaryCollectionConfig): SignedURLConfig | undefined {
+export function getSignedURLConfig(
+  config: CloudinaryCollectionConfig,
+): SignedURLConfig | undefined {
   if (config.privateFiles && typeof config.privateFiles === 'object') {
     return config.privateFiles
   }
