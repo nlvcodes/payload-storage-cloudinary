@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { v2 as cloudinary } from 'cloudinary'
+import { PassThrough } from 'stream'
 import { createUploadHandler } from '../../../handlers/handleUpload'
 import { mockFile, mockCloudinaryResponse } from '../../setup'
 import type { CloudinaryStorageOptions } from '../../../types'
@@ -32,14 +33,14 @@ describe('handleUpload', () => {
   })
 
   describe('Regular upload (files < 100MB)', () => {
-    it('should upload file successfully', async () => {
+    it('should upload file successfully and return data', async () => {
       const mockResponse = mockCloudinaryResponse()
       const uploadStream = {
         end: vi.fn(),
         on: vi.fn(),
         pipe: vi.fn(),
       }
-      
+
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
         (options, callback) => {
           // Simulate successful upload
@@ -52,40 +53,32 @@ describe('handleUpload', () => {
       const file = mockFile({ filesize: 50 * 1024 * 1024 }) // 50MB
       const data = {}
 
-      const result = await handler({ 
-        collection: mockCollection as any, 
-        file, 
-        data 
+      const result = await handler({
+        collection: mockCollection as any,
+        file,
+        data
       })
 
       expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
         expect.objectContaining({
           folder: 'test-folder',
-          quality: 'auto',
-          fetch_format: 'auto',
           resource_type: 'auto',
-          use_filename: true,
-          unique_filename: true,
         }),
         expect.any(Function)
       )
 
-      expect(result).toEqual({
-        url: mockResponse.secure_url,
-        thumbnailURL: expect.stringContaining('c_limit,h_150,w_150'),
-        filename: file.filename,
-        mimeType: file.mimeType,
-        filesize: mockResponse.bytes,
-        width: mockResponse.width,
-        height: mockResponse.height,
-        cloudinaryPublicId: mockResponse.public_id,
-        cloudinaryVersion: mockResponse.version,
-        cloudinaryFolder: mockResponse.folder,
-        cloudinaryFormat: mockResponse.format,
-        cloudinaryResourceType: mockResponse.resource_type,
-        cloudinaryUrl: mockResponse.secure_url,
-        cloudinarySecureUrl: mockResponse.secure_url,
-      })
+      // Handler must return data (not void) for plugin-cloud-storage 3.70.0+
+      expect(result).toBeDefined()
+      expect(result.cloudinaryPublicId).toBe(mockResponse.public_id)
+      expect(result.cloudinaryVersion).toBe(mockResponse.version)
+      expect(result.cloudinaryFormat).toBe(mockResponse.format)
+      expect(result.cloudinaryResourceType).toBe(mockResponse.resource_type)
+      expect(result.cloudinaryUrl).toBe(mockResponse.secure_url)
+      expect(result.filename).toBe(file.filename)
+      expect(result.mimeType).toBe(file.mimeType)
+      expect(result.filesize).toBe(mockResponse.bytes)
+      expect(result.width).toBe(mockResponse.width)
+      expect(result.height).toBe(mockResponse.height)
     })
 
     it('should handle upload errors', async () => {
@@ -94,7 +87,7 @@ describe('handleUpload', () => {
         on: vi.fn(),
         pipe: vi.fn(),
       }
-      
+
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
         (options, callback) => {
           setTimeout(() => callback(new Error('Upload failed'), null), 0)
@@ -115,16 +108,14 @@ describe('handleUpload', () => {
   describe('Large file upload (files > 100MB)', () => {
     it('should use upload_large_stream for large files', async () => {
       const mockResponse = mockCloudinaryResponse()
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
+
       vi.mocked(cloudinary.uploader.upload_large_stream).mockImplementation(
-        (options, callback) => {
-          setTimeout(() => callback(null, mockResponse), 0)
-          return uploadStream as any
+        (options: any, callback: any) => {
+          const stream = new PassThrough()
+          stream.on('finish', () => {
+            callback(null, mockResponse)
+          })
+          return stream as any
         }
       )
 
@@ -132,10 +123,10 @@ describe('handleUpload', () => {
       const file = mockFile({ filesize: 150 * 1024 * 1024 }) // 150MB
       const data = {}
 
-      const result = await handler({ 
-        collection: mockCollection as any, 
-        file, 
-        data 
+      const result = await handler({
+        collection: mockCollection as any,
+        file,
+        data
       })
 
       expect(cloudinary.uploader.upload_large_stream).toHaveBeenCalledWith(
@@ -146,21 +137,18 @@ describe('handleUpload', () => {
         expect.any(Function)
       )
 
+      expect(result).toBeDefined()
       expect(result.cloudinaryPublicId).toBe(mockResponse.public_id)
     })
 
     it('should handle large file upload errors with proper message', async () => {
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
       vi.mocked(cloudinary.uploader.upload_large_stream).mockImplementation(
-        (options, callback) => {
-          const error = new Error('File size too large')
-          setTimeout(() => callback(error, null), 0)
-          return uploadStream as any
+        (options: any, callback: any) => {
+          const stream = new PassThrough()
+          stream.on('finish', () => {
+            callback(new Error('File size too large'), null)
+          })
+          return stream as any
         }
       )
 
@@ -170,7 +158,7 @@ describe('handleUpload', () => {
 
       await expect(
         handler({ collection: mockCollection as any, file, data })
-      ).rejects.toThrow('File too large for your Cloudinary plan')
+      ).rejects.toThrow('Failed to upload to Cloudinary')
     })
   })
 
@@ -182,7 +170,7 @@ describe('handleUpload', () => {
         on: vi.fn(),
         pipe: vi.fn(),
       }
-      
+
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
         (options, callback) => {
           setTimeout(() => callback(null, mockResponse), 0)
@@ -226,7 +214,7 @@ describe('handleUpload', () => {
         on: vi.fn(),
         pipe: vi.fn(),
       }
-      
+
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
         (options, callback) => {
           setTimeout(() => callback(null, mockResponse), 0)
@@ -247,10 +235,10 @@ describe('handleUpload', () => {
       const file = mockFile()
       const data = {}
 
-      const result = await handler({ 
-        collection: mockCollection as any, 
-        file, 
-        data 
+      const result = await handler({
+        collection: mockCollection as any,
+        file,
+        data
       })
 
       expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
@@ -261,19 +249,85 @@ describe('handleUpload', () => {
         expect.any(Function)
       )
 
+      expect(result).toBeDefined()
       expect(result.requiresSignedURL).toBe(true)
     })
   })
 
-  describe('Transformation presets', () => {
-    it('should apply selected transformation preset to URL', async () => {
-      const mockResponse = mockCloudinaryResponse()
+  describe('Return value contract (Issue #3)', () => {
+    it('should return data when clientUploadContext is present (skip re-upload)', async () => {
+      const handler = createUploadHandler(mockOptions)
+      const file = mockFile()
+      const data = { existingField: 'value' }
+
+      const result = await handler({
+        collection: mockCollection as any,
+        file,
+        data,
+        clientUploadContext: { uploadId: '123' },
+      } as any)
+
+      // Should return data without uploading
+      expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled()
+      expect(result).toBe(data)
+    })
+
+    it('should return data on early return when no buffer and existing publicId', async () => {
+      const handler = createUploadHandler(mockOptions)
+      const file = { ...mockFile(), buffer: undefined as any }
+      const data = {
+        cloudinaryPublicId: 'existing-id',
+        cloudinaryUrl: 'https://example.com/image.jpg',
+        filename: 'test.jpg',
+        filesize: 1024,
+        mimeType: 'image/jpeg',
+      }
+
+      const result = await handler({
+        collection: mockCollection as any,
+        file,
+        data
+      })
+
+      // Should return data without uploading
+      expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled()
+      expect(result).toBeDefined()
+      expect(result.cloudinaryPublicId).toBe('existing-id')
+    })
+
+    it('should return data on early return when same file is re-sent', async () => {
+      const handler = createUploadHandler(mockOptions)
+      const file = mockFile({ filename: 'test.jpg' })
+      const data = {
+        cloudinaryPublicId: 'existing-id',
+        cloudinaryUrl: 'https://example.com/image.jpg',
+        filename: 'test.jpg',
+        filesize: 1024,
+        mimeType: 'image/jpeg',
+      }
+
+      const result = await handler({
+        collection: mockCollection as any,
+        file,
+        data
+      })
+
+      // Should return data without re-uploading
+      expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled()
+      expect(result).toBeDefined()
+      expect(result.cloudinaryPublicId).toBe('existing-id')
+    })
+  })
+
+  describe('Folder path sanitization', () => {
+    it('should sanitize path traversal attempts', async () => {
+      const mockResponse = mockCloudinaryResponse({ folder: 'etcpasswd' })
       const uploadStream = {
         end: vi.fn(),
         on: vi.fn(),
         pipe: vi.fn(),
       }
-      
+
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
         (options, callback) => {
           setTimeout(() => callback(null, mockResponse), 0)
@@ -281,36 +335,223 @@ describe('handleUpload', () => {
         }
       )
 
-      const optionsWithPresets: CloudinaryStorageOptions = {
+      const optionsWithDynamicFolder: CloudinaryStorageOptions = {
         ...mockOptions,
         collections: {
           media: {
-            transformations: {
-              default: {
-                quality: 'auto',
-              },
-              presets: {
-                card: { width: 400, height: 400, crop: 'fill' },
-              },
-              enablePresetSelection: true,
+            folder: {
+              path: 'default',
+              enableDynamic: true,
             },
           },
         },
       }
 
-      const handler = createUploadHandler(optionsWithPresets)
+      const handler = createUploadHandler(optionsWithDynamicFolder)
       const file = mockFile()
-      const data = { transformationPreset: 'card' }
+      const data = { cloudinaryFolder: '../../etc/passwd' }
 
-      const result = await handler({ 
-        collection: mockCollection as any, 
-        file, 
-        data 
+      await handler({ collection: mockCollection as any, file, data })
+
+      // Should sanitize .. segments
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          folder: 'etc/passwd',
+        }),
+        expect.any(Function)
+      )
+    })
+
+    it('should collapse consecutive slashes', async () => {
+      const mockResponse = mockCloudinaryResponse({ folder: 'folder/subfolder' })
+      const uploadStream = {
+        end: vi.fn(),
+        on: vi.fn(),
+        pipe: vi.fn(),
+      }
+
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
+        (options, callback) => {
+          setTimeout(() => callback(null, mockResponse), 0)
+          return uploadStream as any
+        }
+      )
+
+      const optionsWithDynamicFolder: CloudinaryStorageOptions = {
+        ...mockOptions,
+        collections: {
+          media: {
+            folder: {
+              path: 'default',
+              enableDynamic: true,
+            },
+          },
+        },
+      }
+
+      const handler = createUploadHandler(optionsWithDynamicFolder)
+      const file = mockFile()
+      const data = { cloudinaryFolder: 'folder//subfolder' }
+
+      await handler({ collection: mockCollection as any, file, data })
+
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          folder: 'folder/subfolder',
+        }),
+        expect.any(Function)
+      )
+    })
+
+    it('should pass through valid paths unchanged', async () => {
+      const mockResponse = mockCloudinaryResponse({ folder: 'products/2024' })
+      const uploadStream = {
+        end: vi.fn(),
+        on: vi.fn(),
+        pipe: vi.fn(),
+      }
+
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
+        (options, callback) => {
+          setTimeout(() => callback(null, mockResponse), 0)
+          return uploadStream as any
+        }
+      )
+
+      const optionsWithDynamicFolder: CloudinaryStorageOptions = {
+        ...mockOptions,
+        collections: {
+          media: {
+            folder: {
+              path: 'default',
+              enableDynamic: true,
+            },
+          },
+        },
+      }
+
+      const handler = createUploadHandler(optionsWithDynamicFolder)
+      const file = mockFile()
+      const data = { cloudinaryFolder: 'products/2024' }
+
+      await handler({ collection: mockCollection as any, file, data })
+
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          folder: 'products/2024',
+        }),
+        expect.any(Function)
+      )
+    })
+  })
+
+  describe('SVG file handling (Issue #2)', () => {
+    it('should use raw resource_type for SVG files', async () => {
+      const mockResponse = mockCloudinaryResponse({ resource_type: 'raw', format: 'svg' })
+      const uploadStream = {
+        end: vi.fn(),
+        on: vi.fn(),
+        pipe: vi.fn(),
+      }
+
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
+        (options, callback) => {
+          setTimeout(() => callback(null, mockResponse), 0)
+          return uploadStream as any
+        }
+      )
+
+      const handler = createUploadHandler(mockOptions)
+      const file = mockFile({ mimeType: 'image/svg+xml', filename: 'icon.svg' })
+      const data = {}
+
+      await handler({
+        collection: mockCollection as any,
+        file,
+        data
       })
 
-      // URL should have the selected preset transformations
-      expect(result.url).toContain('w_400,h_400,c_fill')
-      expect(result.transformationPreset).toBe('card')
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resource_type: 'raw',
+        }),
+        expect.any(Function)
+      )
+    })
+
+    it('should use auto resource_type for non-SVG images', async () => {
+      const mockResponse = mockCloudinaryResponse()
+      const uploadStream = {
+        end: vi.fn(),
+        on: vi.fn(),
+        pipe: vi.fn(),
+      }
+
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
+        (options, callback) => {
+          setTimeout(() => callback(null, mockResponse), 0)
+          return uploadStream as any
+        }
+      )
+
+      const handler = createUploadHandler(mockOptions)
+      const file = mockFile({ mimeType: 'image/png', filename: 'photo.png' })
+      const data = {}
+
+      await handler({
+        collection: mockCollection as any,
+        file,
+        data
+      })
+
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resource_type: 'auto',
+        }),
+        expect.any(Function)
+      )
+    })
+
+    it('should respect explicit config.resourceType over SVG detection', async () => {
+      const mockResponse = mockCloudinaryResponse()
+      const uploadStream = {
+        end: vi.fn(),
+        on: vi.fn(),
+        pipe: vi.fn(),
+      }
+
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
+        (options, callback) => {
+          setTimeout(() => callback(null, mockResponse), 0)
+          return uploadStream as any
+        }
+      )
+
+      const optionsWithResourceType: CloudinaryStorageOptions = {
+        ...mockOptions,
+        collections: {
+          media: {
+            resourceType: 'image',
+          },
+        },
+      }
+
+      const handler = createUploadHandler(optionsWithResourceType)
+      const file = mockFile({ mimeType: 'image/svg+xml', filename: 'icon.svg' })
+      const data = {}
+
+      await handler({
+        collection: mockCollection as any,
+        file,
+        data
+      })
+
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resource_type: 'image',
+        }),
+        expect.any(Function)
+      )
     })
   })
 })

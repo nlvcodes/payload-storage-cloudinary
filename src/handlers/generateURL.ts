@@ -8,20 +8,20 @@ export const createURLGenerator = (
   options: CloudinaryStorageOptions,
 ): GenerateURL => ({ collection, filename, prefix, data }) => {
   const collectionConfig = options.collections[collection.slug]
-  
+
   if (!collectionConfig) {
     return filename
   }
-  
+
   // If we already have a stored Cloudinary URL, return it directly
   if (data?.cloudinaryUrl) {
     return data.cloudinaryUrl
   }
-  
+
   const rawConfig = typeof collectionConfig === 'boolean' ? {} : collectionConfig
   const config = normalizeCollectionConfig(rawConfig)
   const transformConfig = getTransformationConfig(config)
-  
+
   // Check if this is a private file that requires signed URL
   const signedURLConfig = getSignedURLConfig(config)
   if (data?.requiresSignedURL && signedURLConfig) {
@@ -33,33 +33,38 @@ export const createURLGenerator = (
       transformations: transformConfig.default,
     }, signedURLConfig)
   }
-  
-  const transformations: Record<string, any> = {
-    ...(transformConfig.default || {}),
+
+  try {
+    const transformations: Record<string, any> = {
+      ...(transformConfig.default || {}),
+    }
+
+    if (transformations.format === 'auto' || transformations.fetchFormat === 'auto') {
+      transformations.fetch_format = 'auto'
+      delete transformations.format
+    }
+
+    if (transformations.quality === 'auto') {
+      transformations.quality = 'auto'
+    }
+
+    // Use the stored Cloudinary public_id if available
+    const publicId = data?.cloudinaryPublicId || filename.substring(0, filename.lastIndexOf('.'))
+    const fullPublicId = prefix && !data?.cloudinaryPublicId ? `${prefix}/${publicId}` : publicId
+
+    const urlOptions: any = {
+      secure: true,
+      transformation: Object.keys(transformations).length > 0 ? transformations : undefined,
+    }
+
+    // Include version if available
+    if (data?.cloudinaryVersion) {
+      urlOptions.version = data.cloudinaryVersion
+    }
+
+    return cloudinary.url(fullPublicId, urlOptions)
+  } catch (error) {
+    console.error('[Cloudinary URL] Error generating URL:', error)
+    return filename
   }
-  
-  if (transformations.format === 'auto' || transformations.fetchFormat === 'auto') {
-    transformations.fetch_format = 'auto'
-    delete transformations.format
-  }
-  
-  if (transformations.quality === 'auto') {
-    transformations.quality = 'auto'
-  }
-  
-  // Use the stored Cloudinary public_id if available
-  const publicId = data?.cloudinaryPublicId || filename.substring(0, filename.lastIndexOf('.'))
-  const fullPublicId = prefix && !data?.cloudinaryPublicId ? `${prefix}/${publicId}` : publicId
-  
-  const urlOptions: any = {
-    secure: true,
-    transformation: Object.keys(transformations).length > 0 ? transformations : undefined,
-  }
-  
-  // Include version if available
-  if (data?.cloudinaryVersion) {
-    urlOptions.version = data.cloudinaryVersion
-  }
-  
-  return cloudinary.url(fullPublicId, urlOptions)
 }

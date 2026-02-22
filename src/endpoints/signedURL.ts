@@ -55,14 +55,37 @@ export const createSignedURLEndpoint = (
         return Response.json({ error: 'Access denied' }, { status: 403 })
       }
       
-      // For authenticated uploads, Cloudinary already provides a signed URL
-      // We should return the existing URL instead of generating a new one
-      const signedUrl = doc.cloudinaryUrl || doc.url || generateSignedURL({
+      // Parse transformations from query params
+      let transformations: Record<string, any> | undefined
+      const transformParam = req.query?.transformations
+      if (transformParam) {
+        try {
+          transformations = typeof transformParam === 'string' 
+            ? JSON.parse(transformParam) 
+            : transformParam
+        } catch (e) {
+          // If JSON parse fails, try to parse as comma-separated key-value pairs
+          // e.g., "width:300,height:400,crop:fill"
+          if (typeof transformParam === 'string') {
+            transformations = {}
+            transformParam.split(',').forEach(pair => {
+              const [key, value] = pair.split(':')
+              if (key && value) {
+                transformations![key.trim()] = isNaN(Number(value)) ? value.trim() : Number(value)
+              }
+            })
+          }
+        }
+      }
+      
+      // For authenticated uploads, we need to generate a new signed URL with transformations
+      const signedUrl = generateSignedURL({
         publicId: doc.cloudinaryPublicId,
         version: doc.cloudinaryVersion,
         resourceType: doc.cloudinaryResourceType,
         format: doc.cloudinaryFormat,
         expiresIn: signedURLConfig.expiresIn,
+        transformations,
       }, signedURLConfig)
       
       // Also generate download URL if requested
@@ -84,6 +107,7 @@ export const createSignedURLEndpoint = (
         downloadUrl,
         expiresIn: signedURLConfig.expiresIn || 3600,
         expiresAt: new Date(Date.now() + ((signedURLConfig.expiresIn || 3600) * 1000)).toISOString(),
+        transformations,
       })
       
     } catch (error) {
@@ -112,10 +136,16 @@ export const createBatchSignedURLEndpoint = (
   path: '/signed-urls',
   method: 'post',
   handler: async (req) => {
-    const body = await req.json?.() as { ids?: string[] } | undefined
-    const ids = body?.ids
-    
-    if (!ids || !Array.isArray(ids)) {
+    const body = await req.json?.().catch(() => undefined)
+
+    if (!body || typeof body !== 'object') {
+      return Response.json({ error: 'Invalid request body' }, { status: 400 })
+    }
+
+    const ids = (body as Record<string, unknown>).ids
+    const transformations = (body as Record<string, unknown>).transformations as Record<string, any> | undefined
+
+    if (!ids || !Array.isArray(ids) || !ids.every((id: unknown) => typeof id === 'string')) {
       return Response.json({ error: 'Array of document IDs required' }, { status: 400 })
     }
     
@@ -166,13 +196,14 @@ export const createBatchSignedURLEndpoint = (
             }
           }
           
-          // For authenticated uploads, use the existing URL
-          const signedUrl = doc.cloudinaryUrl || doc.url || generateSignedURL({
+          // Generate signed URL with transformations
+          const signedUrl = generateSignedURL({
             publicId: doc.cloudinaryPublicId,
             version: doc.cloudinaryVersion,
             resourceType: doc.cloudinaryResourceType,
             format: doc.cloudinaryFormat,
             expiresIn: signedURLConfig.expiresIn,
+            transformations,
           }, signedURLConfig)
           
           return {
@@ -180,6 +211,7 @@ export const createBatchSignedURLEndpoint = (
             url: signedUrl,
             expiresIn: signedURLConfig.expiresIn || 3600,
             expiresAt: new Date(Date.now() + ((signedURLConfig.expiresIn || 3600) * 1000)).toISOString(),
+            transformations,
           }
         })
       )

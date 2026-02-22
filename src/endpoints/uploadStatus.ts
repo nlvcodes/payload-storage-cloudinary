@@ -5,6 +5,10 @@ export const createUploadStatusEndpoint = (collectionSlug: string): Endpoint => 
   path: '/upload-status/:id?',
   method: 'get',
   handler: async (req) => {
+    if (!req.user) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
     const queue = queueManager.getQueue(collectionSlug)
     const id = req.routeParams?.id as string | undefined
     
@@ -44,6 +48,10 @@ export const createCancelUploadEndpoint = (collectionSlug: string): Endpoint => 
   path: '/upload-cancel/:id',
   method: 'post',
   handler: async (req) => {
+    if (!req.user) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
     const queue = queueManager.getQueue(collectionSlug)
     const id = req.routeParams?.id as string | undefined
     

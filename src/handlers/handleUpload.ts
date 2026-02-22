@@ -1,5 +1,5 @@
 import type { HandleUpload } from '@payloadcms/plugin-cloud-storage/types'
-import type { CloudinaryStorageOptions, CloudinaryCollectionConfig } from '../types.js'
+import type { CloudinaryStorageOptions, CloudinaryCollectionConfig, CloudinaryUploadResult, CloudinaryDocumentData } from '../types.js'
 import { v2 as cloudinary } from 'cloudinary'
 import { queueManager } from '../queue/queueManager.js'
 import { generatePrivateUploadOptions, generateSignedURL } from '../helpers/signedURLs.js'
@@ -8,11 +8,16 @@ import { buildWatermarkTransformation, buildImageWatermarkTransformation, buildB
 
 export const createUploadHandler = (
   options: CloudinaryStorageOptions,
-): HandleUpload => async ({ collection, file, data }) => {
-  console.log('[Cloudinary Upload] Starting upload for collection:', collection.slug)
-  console.log('[Cloudinary Upload] File:', file.filename, 'Size:', file.filesize, 'Has buffer:', !!file.buffer)
-  console.log('[Cloudinary Upload] Existing cloudinaryPublicId:', data?.cloudinaryPublicId)
-  
+): HandleUpload => async (uploadArgs) => {
+  const { collection, file, data } = uploadArgs
+  // Support newer plugin-cloud-storage versions (3.70.0+) that pass req and clientUploadContext
+  const clientUploadContext = (uploadArgs as any).clientUploadContext
+
+  // If clientUploadContext is present, the client already uploaded — skip re-upload
+  if (clientUploadContext) {
+    return data
+  }
+
   // Note: Payload's cloud storage plugin architecture calls this handler in two scenarios:
   // 1. When a new file is uploaded (file.buffer is present)
   // 2. Sometimes during updates even when no new file is selected (this seems to be a Payload behavior)
@@ -32,7 +37,7 @@ export const createUploadHandler = (
     // If we have an existing cloudinaryPublicId but no file buffer, this is likely an update without a new file
     // In this case, we should not re-upload to Cloudinary
     if (data?.cloudinaryPublicId) {
-      console.log('[Cloudinary Upload] Skipping upload - no new file provided, keeping existing Cloudinary asset')
+
       
       // Ensure required fields are present to prevent fetch attempts
       if (!data.url && data.cloudinaryUrl) {
@@ -44,7 +49,7 @@ export const createUploadHandler = (
       data.filesize = data.filesize || file.filesize
       data.mimeType = data.mimeType || file.mimeType
       
-      return // Return early without modifying the data
+      return data // Return early without modifying the data
     }
     throw new Error('No file buffer provided for upload')
   }
@@ -52,16 +57,11 @@ export const createUploadHandler = (
   // Additional check: if we have an existing cloudinaryPublicId,
   // this might be an update where Payload is re-sending the same file or a similar file
   if (data?.cloudinaryPublicId) {
-    console.log('[Cloudinary Upload] Existing file detected with publicId:', data.cloudinaryPublicId)
-    console.log('[Cloudinary Upload] Current filename:', file.filename, 'Stored filename:', data.filename)
-    
     // Check if this is the same file or just an update
     const isSameFile = data.filename === file.filename || 
                       (data.filename && file.filename && data.filename.replace(/[- ]\d+\./g, '.') === file.filename.replace(/[- ]\d+\./g, '.'))
     
     if (isSameFile) {
-      console.log('[Cloudinary Upload] Same file detected. Skipping re-upload to Cloudinary.')
-      
       // IMPORTANT: We need to ensure all required fields are present even when skipping upload
       // This prevents Payload from trying to fetch the file for processing
       if (!data.url && data.cloudinaryUrl) {
@@ -74,19 +74,15 @@ export const createUploadHandler = (
       data.mimeType = file.mimeType || data.mimeType
       
       // Skip the upload and return early - Payload is re-sending the same file
-      return
+      return data
     } else {
-      console.log('[Cloudinary Upload] Different file detected. This will replace the existing file in Cloudinary.')
       // Note: The old file will remain in Cloudinary unless manually deleted
       // This is by design to prevent accidental data loss
     }
   }
   
   try {
-    const uploadOptions = buildUploadOptions(config, file.filename, data)
-    console.log('[Cloudinary Upload] Upload options:', JSON.stringify(uploadOptions, null, 2))
-    console.log('[Cloudinary Upload] Collection config:', JSON.stringify(config, null, 2))
-    
+    const uploadOptions = buildUploadOptions(config, file.filename, data, file.mimeType)
     // Check if upload queue is enabled
     if (config.uploadQueue?.enabled) {
       const queue = queueManager.getQueue(collection.slug, config.uploadQueue)
@@ -195,7 +191,6 @@ export const createUploadHandler = (
                 reject(error)
               }
             } else {
-              console.log('[Cloudinary Upload] Upload successful:', result?.public_id)
               resolve(result)
             }
           }
@@ -211,7 +206,7 @@ export const createUploadHandler = (
   }
 }
 
-function processUploadResult(result: any, data: any, file: any, config: CloudinaryCollectionConfig): void {
+function processUploadResult(result: CloudinaryUploadResult, data: CloudinaryDocumentData, file: { filename: string; mimeType: string; filesize: number }, config: CloudinaryCollectionConfig): CloudinaryDocumentData {
   if (result) {
     data.cloudinaryPublicId = result.public_id
     data.cloudinaryUrl = result.secure_url
@@ -236,7 +231,6 @@ function processUploadResult(result: any, data: any, file: any, config: Cloudina
       }
     })
     data.thumbnailURL = thumbnailUrl  // Changed to uppercase URL to match Payload's expectation
-    console.log('[Cloudinary Upload] Thumbnail URL:', thumbnailUrl)
     
     // Store the original URL (without transformations)
     // This should be the raw URL without any transformations
@@ -320,7 +314,7 @@ function processUploadResult(result: any, data: any, file: any, config: Cloudina
         
         if (transformationType === 'watermark' && transformConfig.publicTransformation.watermark) {
           const watermarkFieldName = transformConfig.publicTransformation.watermark.textFieldName || 'watermarkText'
-          const watermarkText = data[watermarkFieldName]
+          const watermarkText = data[watermarkFieldName] as string | undefined
           
           // Build watermark transformation
           if (transformConfig.publicTransformation.watermark.imageId) {
@@ -350,15 +344,32 @@ function processUploadResult(result: any, data: any, file: any, config: Cloudina
       }
     }
   }
+  return data
+}
+
+function sanitizeFolderPath(folder: string): string {
+  return folder
+    .trim()
+    .replace(/\.\./g, '')             // Remove path traversal segments
+    .replace(/[^a-zA-Z0-9_\-/ ]/g, '') // Restrict to safe characters
+    .replace(/\/+/g, '/')             // Collapse consecutive slashes
+    .replace(/^\/+|\/+$/g, '')        // Remove leading/trailing slashes
 }
 
 function buildUploadOptions(
   config: CloudinaryCollectionConfig,
   _filename: string,
-  data?: any
+  data?: any,
+  mimeType?: string
 ): Record<string, any> {
+  // Determine resource type — SVG files need 'raw' to prevent Cloudinary misidentifying them
+  let resourceType: string = config.resourceType || 'auto'
+  if (!config.resourceType && mimeType === 'image/svg+xml') {
+    resourceType = 'raw'
+  }
+
   const options: Record<string, any> = {
-    resource_type: config.resourceType || 'auto',
+    resource_type: resourceType,
   }
   
   // Handle private files
@@ -384,9 +395,9 @@ function buildUploadOptions(
       folder = data[folderField] as string
     }
     
-    // Clean up folder path if we have one
+    // Clean up and sanitize folder path
     if (folder) {
-      folder = folder.trim().replace(/^\/+|\/+$/g, '') // Remove leading/trailing slashes
+      folder = sanitizeFolderPath(folder)
     }
   }
   

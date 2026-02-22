@@ -8,7 +8,11 @@ process.env.CLOUDINARY_API_SECRET = 'test-secret'
 // Mock Cloudinary v2
 vi.mock('cloudinary', () => ({
   v2: {
-    config: vi.fn(),
+    config: vi.fn(() => ({
+      cloud_name: 'test-cloud',
+      api_key: 'test-key',
+      api_secret: 'test-secret',
+    })),
     uploader: {
       upload: vi.fn(),
       upload_stream: vi.fn(),

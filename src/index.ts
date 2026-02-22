@@ -140,12 +140,42 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                 type: 'select' as const,
                 label: 'Transformation Presets',
                 hasMany: true,
-                options: transformConfig.presets.map(preset => ({
-                  label: preset.label,
-                  value: preset.name,
-                })),
+                options: (() => {
+                  // Group presets by category
+                  const grouped = transformConfig.presets.reduce((acc, preset) => {
+                    const category = preset.category || 'other'
+                    if (!acc[category]) acc[category] = []
+                    acc[category].push(preset)
+                    return acc
+                  }, {} as Record<string, typeof transformConfig.presets>)
+                  
+                  // Create options with category headers
+                  const options: Array<{label: string, value: string}> = []
+                  const categoryOrder = ['size', 'social', 'aspect-ratio', 'effect', 'optimization', 'other']
+                  const categoryLabels: Record<string, string> = {
+                    'size': 'SIZE',
+                    'social': 'SOCIAL MEDIA',
+                    'aspect-ratio': 'ASPECT RATIO',
+                    'effect': 'EFFECTS',
+                    'optimization': 'OPTIMIZATION',
+                    'other': 'OTHER'
+                  }
+                  
+                  categoryOrder.forEach(category => {
+                    if (grouped[category]) {
+                      grouped[category].forEach(preset => {
+                        options.push({
+                          label: `${categoryLabels[category] || category} › ${preset.label}`,
+                          value: preset.name,
+                        })
+                      })
+                    }
+                  })
+                  
+                  return options
+                })(),
                 admin: {
-                  description: 'Select multiple transformations to apply (they will be combined)',
+                  description: 'Select transformations to apply. Note: Only one preset from each category (Size, Effect, etc.) will be applied.',
                 },
               }] : []),
               // Add private file fields only if private files are enabled
@@ -292,7 +322,6 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
         
         
         // Add hooks
-        const folderConfig = getFolderConfig(config)
         const transformConfig = getTransformationConfig(config)
         const hooks = { ...(collection.hooks || {}) }
         
@@ -342,3 +371,12 @@ export { getTransformationUrl, commonPresets } from './helpers/transformations.j
 export { generateSignedURL, generateDownloadURL, isAccessAllowed } from './helpers/signedURLs.js'
 export { getCloudinaryFolders } from './helpers/getCloudinaryFolders.js'
 export { fetchSignedURL, fetchSignedURLs, useSignedURL, requiresSignedURL, getImageURL, createPrivateImageComponent } from './helpers/clientHelpers.js'
+export { 
+  getSignedURL, 
+  getSignedURLs, 
+  applyTransformationsToUrl, 
+  getImageURL as getServerImageURL,
+  getPrivateImageURL,
+  getPublicPreviewURL,
+  getPremiumImageURL
+} from './helpers/serverHelpers.js'

@@ -37,15 +37,15 @@ describe('handleDelete', () => {
       cloudinaryResourceType: 'image',
     }
 
-    await handler({ 
-      collection: mockCollection as any, 
-      doc, 
-      filename: 'test.jpg' 
+    await handler({
+      collection: mockCollection as any,
+      doc,
+      filename: 'test.jpg'
     })
 
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
       'test-public-id',
-      { resource_type: 'image' }
+      { resource_type: 'image', invalidate: true }
     )
   })
 
@@ -65,10 +65,10 @@ describe('handleDelete', () => {
       cloudinaryResourceType: 'image',
     }
 
-    await handler({ 
-      collection: mockCollection as any, 
-      doc, 
-      filename: 'test.jpg' 
+    await handler({
+      collection: mockCollection as any,
+      doc,
+      filename: 'test.jpg'
     })
 
     expect(cloudinary.uploader.destroy).not.toHaveBeenCalled()
@@ -84,15 +84,15 @@ describe('handleDelete', () => {
       url: 'https://res.cloudinary.com/test/image/upload/v1234567890/folder/test-image.jpg',
     }
 
-    await handler({ 
-      collection: mockCollection as any, 
-      doc, 
-      filename: 'test.jpg' 
+    await handler({
+      collection: mockCollection as any,
+      doc,
+      filename: 'test.jpg'
     })
 
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
       'folder/test-image',
-      { resource_type: 'image' }
+      { resource_type: 'image', invalidate: true }
     )
   })
 
@@ -109,45 +109,39 @@ describe('handleDelete', () => {
 
     // Should not throw
     await expect(
-      handler({ 
-        collection: mockCollection as any, 
-        doc, 
-        filename: 'test.jpg' 
+      handler({
+        collection: mockCollection as any,
+        doc,
+        filename: 'test.jpg'
       })
     ).resolves.not.toThrow()
 
     expect(cloudinary.uploader.destroy).toHaveBeenCalled()
   })
 
-  it('should use default resource type when not specified', async () => {
+  it('should delete without stack trace guard (no erroneous update detection)', async () => {
     vi.mocked(cloudinary.uploader.destroy).mockResolvedValue({
       result: 'ok',
     } as any)
 
-    const optionsWithResourceType: CloudinaryStorageOptions = {
-      ...mockOptions,
-      collections: {
-        media: {
-          resourceType: 'video',
-        },
-      },
-    }
-
-    const handler = createDeleteHandler(optionsWithResourceType)
+    const handler = createDeleteHandler(mockOptions)
     const doc = {
       cloudinaryPublicId: 'test-public-id',
-      // No cloudinaryResourceType in doc
+      cloudinaryResourceType: 'image',
+      url: 'https://example.com/image.jpg',
     }
 
-    await handler({ 
-      collection: mockCollection as any, 
-      doc, 
-      filename: 'test.mp4' 
+    // Should delete even though doc has valid Cloudinary data
+    // The beforeChange hook handles update preservation, not the delete handler
+    await handler({
+      collection: mockCollection as any,
+      doc,
+      filename: 'test.jpg'
     })
 
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
       'test-public-id',
-      { resource_type: 'video' }
+      { resource_type: 'image', invalidate: true }
     )
   })
 
@@ -160,10 +154,10 @@ describe('handleDelete', () => {
 
     // Should not throw
     await expect(
-      handler({ 
-        collection: mockCollection as any, 
-        doc, 
-        filename: 'test.jpg' 
+      handler({
+        collection: mockCollection as any,
+        doc,
+        filename: 'test.jpg'
       })
     ).resolves.not.toThrow()
 

@@ -6,6 +6,7 @@ export interface TransformationPreset {
   label: string
   transformations: Record<string, any>
   description?: string
+  category?: 'size' | 'effect' | 'optimization' | 'social' | 'aspect-ratio'
 }
 
 export interface FolderConfig {
@@ -113,3 +114,47 @@ export interface CloudinaryStorageOptions {
 }
 
 export type CloudinaryStoragePlugin = (options: CloudinaryStorageOptions) => (config: Config) => Config
+
+// Shared Cloudinary interfaces to replace `any` types across handlers
+
+export interface CloudinaryUploadResult {
+  public_id: string
+  version: number
+  signature: string
+  width?: number
+  height?: number
+  format: string
+  resource_type: string
+  created_at: string
+  bytes: number
+  type: string
+  etag: string
+  url: string
+  secure_url: string
+  folder?: string
+  original_filename: string
+}
+
+export interface CloudinaryDocumentData {
+  cloudinaryPublicId?: string
+  cloudinaryUrl?: string
+  cloudinaryResourceType?: string
+  cloudinaryFormat?: string
+  cloudinaryVersion?: number
+  cloudinaryFolder?: string
+  url?: string
+  originalUrl?: string
+  thumbnailURL?: string
+  transformedUrl?: string
+  filename?: string
+  filesize?: number
+  mimeType?: string
+  width?: number
+  height?: number
+  isPrivate?: boolean
+  requiresSignedURL?: boolean
+  publicTransformationUrl?: string
+  uploadStatus?: string
+  uploadProgress?: number
+  [key: string]: unknown
+}

@@ -105,25 +105,22 @@ describe('signedURL endpoints', () => {
       expect(data.expiresIn).toBe(3600) // Default 1 hour
     })
 
-    it('should deny access for unauthorized user', async () => {
+    it('should deny access for unauthorized user (Payload rejects findByID)', async () => {
       const req = mockPayloadRequest({
         routeParams: { id: '123' },
         user: null, // No user
       })
 
-      const mockDoc = {
-        id: '123',
-        requiresSignedURL: true,
-        cloudinaryPublicId: 'test-public-id',
-      }
-
-      vi.mocked(req.payload.findByID).mockResolvedValue(mockDoc)
+      // Payload's access control rejects the findByID call
+      vi.mocked(req.payload.findByID).mockRejectedValue(
+        new Error('Unauthorized')
+      )
 
       const response = await endpoint.handler(req)
       const data = await response.json()
 
       expect(response.status).toBe(403)
-      expect(data.error).toBe('Access denied')
+      expect(data.error).toBe('Authentication required for private files')
     })
 
     it('should generate download URL when requested', async () => {
@@ -207,6 +204,30 @@ describe('signedURL endpoints', () => {
 
       expect(response.status).toBe(400)
       expect(data.error).toBe('Array of document IDs required')
+    })
+
+    it('should return error for invalid body shape (non-string IDs)', async () => {
+      const req = mockPayloadRequest({
+        json: vi.fn().mockResolvedValue({ ids: [123, 456] }),
+      })
+
+      const response = await endpoint.handler(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(400)
+      expect(data.error).toBe('Array of document IDs required')
+    })
+
+    it('should return error for malformed JSON body', async () => {
+      const req = mockPayloadRequest({
+        json: vi.fn().mockRejectedValue(new Error('Invalid JSON')),
+      })
+
+      const response = await endpoint.handler(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(400)
+      expect(data.error).toBe('Invalid request body')
     })
 
     it('should generate signed URLs for multiple documents', async () => {

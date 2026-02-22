@@ -43,7 +43,7 @@ export function generateSignedURL(options: SignedURLOptions, config?: SignedURLC
   const urlOptions: any = {
     secure: true,
     sign_url: true,
-    type: 'authenticated',
+    type: 'upload', // Use 'upload' type for regular signed URLs
     expires_at: expiresAt,
   }
   

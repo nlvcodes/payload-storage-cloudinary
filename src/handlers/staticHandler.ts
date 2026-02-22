@@ -35,6 +35,7 @@ export const createStaticHandler = (
       },
     })
   } catch (error) {
+    console.error('[Cloudinary Static] Error:', error)
     return new Response('Not found', { status: 404 })
   }
 }
