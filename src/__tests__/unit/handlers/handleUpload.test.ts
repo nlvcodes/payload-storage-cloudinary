@@ -445,6 +445,124 @@ describe('handleUpload', () => {
     })
   })
 
+  describe('useFilename with stream uploads (PR #5)', () => {
+    it('should set public_id to filename without extension when useFilename is true', async () => {
+      const mockResponse = mockCloudinaryResponse()
+      const uploadStream = {
+        end: vi.fn(),
+        on: vi.fn(),
+        pipe: vi.fn(),
+      }
+
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
+        (options, callback) => {
+          setTimeout(() => callback(null, mockResponse), 0)
+          return uploadStream as any
+        }
+      )
+
+      const optionsWithUseFilename: CloudinaryStorageOptions = {
+        ...mockOptions,
+        collections: {
+          media: {
+            folder: 'test-folder',
+            useFilename: true,
+          },
+        },
+      }
+
+      const handler = createUploadHandler(optionsWithUseFilename)
+      const file = mockFile({ filename: 'my-document.pdf' })
+      const data = {}
+
+      await handler({ collection: mockCollection as any, file, data })
+
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          public_id: 'my-document',
+          folder: 'test-folder',
+        }),
+        expect.any(Function)
+      )
+    })
+
+    it('should handle filenames without extensions', async () => {
+      const mockResponse = mockCloudinaryResponse()
+      const uploadStream = {
+        end: vi.fn(),
+        on: vi.fn(),
+        pipe: vi.fn(),
+      }
+
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
+        (options, callback) => {
+          setTimeout(() => callback(null, mockResponse), 0)
+          return uploadStream as any
+        }
+      )
+
+      const optionsWithUseFilename: CloudinaryStorageOptions = {
+        ...mockOptions,
+        collections: {
+          media: {
+            useFilename: true,
+          },
+        },
+      }
+
+      const handler = createUploadHandler(optionsWithUseFilename)
+      const file = mockFile({ filename: 'README' })
+      const data = {}
+
+      await handler({ collection: mockCollection as any, file, data })
+
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          public_id: 'README',
+        }),
+        expect.any(Function)
+      )
+    })
+
+    it('should not set public_id when useFilename is false', async () => {
+      const mockResponse = mockCloudinaryResponse()
+      const uploadStream = {
+        end: vi.fn(),
+        on: vi.fn(),
+        pipe: vi.fn(),
+      }
+
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
+        (options, callback) => {
+          setTimeout(() => callback(null, mockResponse), 0)
+          return uploadStream as any
+        }
+      )
+
+      const optionsWithoutUseFilename: CloudinaryStorageOptions = {
+        ...mockOptions,
+        collections: {
+          media: {
+            useFilename: false,
+          },
+        },
+      }
+
+      const handler = createUploadHandler(optionsWithoutUseFilename)
+      const file = mockFile({ filename: 'my-document.pdf' })
+      const data = {}
+
+      await handler({ collection: mockCollection as any, file, data })
+
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          public_id: expect.anything(),
+        }),
+        expect.any(Function)
+      )
+    })
+  })
+
   describe('SVG file handling (Issue #2)', () => {
     it('should use raw resource_type for SVG files', async () => {
       const mockResponse = mockCloudinaryResponse({ resource_type: 'raw', format: 'svg' })
