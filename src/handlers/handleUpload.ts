@@ -402,7 +402,7 @@ function sanitizeFolderPath(folder: string): string {
 
 function buildUploadOptions(
   config: CloudinaryCollectionConfig,
-  _filename: string,
+  filename: string,
   data?: any,
   mimeType?: string,
 ): Record<string, any> {
@@ -460,8 +460,10 @@ function buildUploadOptions(
     // Cloudinary automatically creates folders if they don't exist
   }
 
-  if (config.useFilename !== undefined) {
-    options.use_filename = config.useFilename
+  if (config.useFilename && filename) {
+    const nameWithoutExt =
+      filename.lastIndexOf('.') > 0 ? filename.substring(0, filename.lastIndexOf('.')) : filename
+    options.public_id = nameWithoutExt
   }
 
   if (config.uniqueFilename !== undefined) {
