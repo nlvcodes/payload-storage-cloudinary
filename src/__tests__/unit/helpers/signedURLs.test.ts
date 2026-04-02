@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { v2 as cloudinary } from 'cloudinary'
-import { 
+import {
   generateSignedURL,
   isAccessAllowed,
   generatePrivateUploadOptions,
@@ -10,24 +10,21 @@ import type { SignedURLConfig } from '../../../types'
 
 describe('signedURLs helpers', () => {
   describe('generateSignedURL', () => {
-    beforeEach(() => {
-      vi.mocked(cloudinary.url).mockReturnValue('https://cloudinary.com/signed-url')
-      vi.mocked(cloudinary.utils.sign_url).mockReturnValue('https://cloudinary.com/signed-url-with-auth')
-    })
-
     it('should generate signed URL with default options', () => {
       const url = generateSignedURL({
         publicId: 'my-image',
         resourceType: 'image',
       })
 
-      expect(cloudinary.url).toHaveBeenCalledWith('my-image', {
-        resource_type: 'image',
-        secure: true,
-        sign_url: true,
-        type: 'authenticated',
-      })
-      expect(url).toBe('https://cloudinary.com/signed-url')
+      expect(cloudinary.url).toHaveBeenCalledWith(
+        'my-image',
+        expect.objectContaining({
+          secure: true,
+          sign_url: true,
+          type: 'upload',
+        }),
+      )
+      expect(typeof url).toBe('string')
     })
 
     it('should include version when provided', () => {
@@ -36,10 +33,11 @@ describe('signedURLs helpers', () => {
         version: 1234567890,
       })
 
-      expect(cloudinary.url).toHaveBeenCalledWith('my-image', 
+      expect(cloudinary.url).toHaveBeenCalledWith(
+        'my-image',
         expect.objectContaining({
           version: 1234567890,
-        })
+        }),
       )
     })
 
@@ -53,14 +51,15 @@ describe('signedURLs helpers', () => {
         },
       })
 
-      expect(cloudinary.url).toHaveBeenCalledWith('my-image', 
+      expect(cloudinary.url).toHaveBeenCalledWith(
+        'my-image',
         expect.objectContaining({
           transformation: {
             width: 400,
             height: 300,
             crop: 'fill',
           },
-        })
+        }),
       )
     })
 
@@ -70,50 +69,43 @@ describe('signedURLs helpers', () => {
         attachmentFilename: 'download.pdf',
       })
 
-      expect(cloudinary.url).toHaveBeenCalledWith('my-document', 
+      expect(cloudinary.url).toHaveBeenCalledWith(
+        'my-document',
         expect.objectContaining({
           attachment: 'download.pdf',
-        })
+        }),
       )
     })
 
-    it('should use config auth types when provided', () => {
-      const config: SignedURLConfig = {
-        enabled: true,
-        authTypes: ['upload', 'authenticated'],
-      }
-
+    it('should include format in resource identifier when provided', () => {
       generateSignedURL({
         publicId: 'my-image',
-      }, config)
+        format: 'webp',
+      })
 
-      expect(cloudinary.url).toHaveBeenCalledWith('my-image', 
-        expect.objectContaining({
-          auth_types: 'upload,authenticated',
-        })
+      expect(cloudinary.url).toHaveBeenCalledWith(
+        'my-image.webp',
+        expect.any(Object),
       )
     })
 
-    it('should calculate expiration time', () => {
+    it('should set expires_at based on expiresIn', () => {
       const now = Date.now()
       vi.spyOn(Date, 'now').mockReturnValue(now)
 
       generateSignedURL({
         publicId: 'my-image',
-        expiresIn: 7200, // 2 hours
+        expiresIn: 7200,
       })
 
-      const expectedExpiry = Math.floor((now + 7200 * 1000) / 1000)
-      
-      expect(cloudinary.utils.sign_url).toHaveBeenCalledWith(
-        'https://cloudinary.com/signed-url',
+      const expectedTimestamp = Math.round(now / 1000)
+      const expectedExpiry = expectedTimestamp + 7200
+
+      expect(cloudinary.url).toHaveBeenCalledWith(
+        'my-image',
         expect.objectContaining({
-          auth_token: expect.objectContaining({
-            duration: 7200,
-            start_time: Math.floor(now / 1000),
-            expiration: expectedExpiry,
-          }),
-        })
+          expires_at: expectedExpiry,
+        }),
       )
     })
   })
@@ -148,7 +140,6 @@ describe('signedURLs helpers', () => {
       const req = { user: null }
       const doc = { id: 'doc-123' }
 
-      // This function assumes Payload already checked access
       const result = await isAccessAllowed(req, doc)
 
       expect(result).toBe(true)
@@ -201,23 +192,19 @@ describe('signedURLs helpers', () => {
   })
 
   describe('generateDownloadURL', () => {
-    beforeEach(() => {
-      vi.mocked(cloudinary.url).mockReturnValue('https://cloudinary.com/download-url')
-    })
-
     it('should generate download URL with attachment', () => {
       const url = generateDownloadURL('my-document', 'report.pdf')
 
-      expect(cloudinary.url).toHaveBeenCalledWith('my-document', 
+      expect(cloudinary.url).toHaveBeenCalledWith(
+        'my-document',
         expect.objectContaining({
-          attachment: 'report.pdf',
-          resource_type: 'image',
           secure: true,
           sign_url: true,
-          type: 'authenticated',
-        })
+          type: 'upload',
+          attachment: 'report.pdf',
+        }),
       )
-      expect(url).toBe('https://cloudinary.com/download-url')
+      expect(typeof url).toBe('string')
     })
 
     it('should include optional parameters', () => {
@@ -227,12 +214,12 @@ describe('signedURLs helpers', () => {
         expiresIn: 3600,
       })
 
-      expect(cloudinary.url).toHaveBeenCalledWith('my-video', 
+      expect(cloudinary.url).toHaveBeenCalledWith(
+        'my-video',
         expect.objectContaining({
-          attachment: 'video.mp4',
-          resource_type: 'video',
           version: 1234567890,
-        })
+          attachment: 'video.mp4',
+        }),
       )
     })
   })

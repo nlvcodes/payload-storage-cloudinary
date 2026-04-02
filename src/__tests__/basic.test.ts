@@ -28,8 +28,8 @@ describe('Basic Plugin Tests', () => {
 
     const plugin = cloudinaryStorage(options)
     expect(plugin).toBeDefined()
-    // The plugin returns whatever cloudStoragePlugin returns
-    expect(plugin).toHaveProperty('collections')
+    // The plugin returns a function (Payload plugin pattern)
+    expect(typeof plugin).toBe('function')
   })
 
   it('should validate cloud config', () => {

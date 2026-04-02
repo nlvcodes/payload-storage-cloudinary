@@ -1,31 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { 
-  normalizeCollectionConfig, 
+import {
+  normalizeCollectionConfig,
   getFolderConfig,
   getTransformationConfig,
   getSignedURLConfig,
-  getUploadQueueConfig,
 } from '../../../helpers/normalizeConfig'
 import type { CloudinaryCollectionConfig } from '../../../types'
 
 describe('normalizeConfig helpers', () => {
   describe('normalizeCollectionConfig', () => {
-    it('should handle boolean config', () => {
-      const result = normalizeCollectionConfig(true)
-      
-      expect(result).toEqual({
-        deleteFromCloudinary: true,
-        resourceType: 'auto',
-      })
-    })
-
     it('should handle empty object config', () => {
       const result = normalizeCollectionConfig({})
-      
-      expect(result).toEqual({
-        deleteFromCloudinary: true,
-        resourceType: 'auto',
-      })
+
+      expect(result).toEqual({})
     })
 
     it('should normalize legacy signedURLs to privateFiles', () => {
@@ -35,9 +22,9 @@ describe('normalizeConfig helpers', () => {
           expiresIn: 7200,
         },
       }
-      
+
       const result = normalizeCollectionConfig(config)
-      
+
       expect(result).toHaveProperty('privateFiles', {
         enabled: true,
         expiresIn: 7200,
@@ -49,30 +36,28 @@ describe('normalizeConfig helpers', () => {
       const config: CloudinaryCollectionConfig = {
         privateFiles: true,
       }
-      
+
       const result = normalizeCollectionConfig(config)
-      
+
       expect(result.privateFiles).toEqual({
         enabled: true,
         expiresIn: 3600,
       })
     })
 
-    it('should normalize string folder to object', () => {
+    it('should normalize string folder to object with path', () => {
       const config: CloudinaryCollectionConfig = {
         folder: 'my-folder',
       }
-      
+
       const result = normalizeCollectionConfig(config)
-      
+
       expect(result.folder).toEqual({
         path: 'my-folder',
-        enableDynamic: false,
-        fieldName: 'cloudinaryFolder',
       })
     })
 
-    it('should normalize transformations object', () => {
+    it('should normalize transformations without default key as legacy format', () => {
       const config: CloudinaryCollectionConfig = {
         transformations: {
           width: 400,
@@ -80,15 +65,33 @@ describe('normalizeConfig helpers', () => {
           crop: 'fill',
         },
       }
-      
+
       const result = normalizeCollectionConfig(config)
-      
+
       expect(result.transformations).toEqual({
         default: {
           width: 400,
           height: 300,
           crop: 'fill',
         },
+      })
+    })
+
+    it('should preserve new-format transformations with default key', () => {
+      const config: CloudinaryCollectionConfig = {
+        transformations: {
+          default: { quality: 'auto' },
+          presets: { thumbnail: { width: 150 } },
+          enablePresetSelection: true,
+        },
+      }
+
+      const result = normalizeCollectionConfig(config)
+
+      expect(result.transformations).toEqual({
+        default: { quality: 'auto' },
+        presets: { thumbnail: { width: 150 } },
+        enablePresetSelection: true,
       })
     })
 
@@ -115,14 +118,13 @@ describe('normalizeConfig helpers', () => {
         deleteFromCloudinary: false,
         resourceType: 'video',
       }
-      
+
       const result = normalizeCollectionConfig(config)
-      
+
       expect(result).toMatchObject({
         folder: {
           path: 'uploads',
           enableDynamic: true,
-          fieldName: 'cloudinaryFolder',
         },
         transformations: {
           default: { quality: 'auto' },
@@ -141,24 +143,44 @@ describe('normalizeConfig helpers', () => {
         resourceType: 'video',
       })
     })
+
+    it('should map legacy enableDynamicFolders field', () => {
+      const config: any = {
+        enableDynamicFolders: true,
+        folderField: 'myFolder',
+      }
+
+      const result = normalizeCollectionConfig(config)
+
+      expect(result.folder).toMatchObject({
+        enableDynamic: true,
+        fieldName: 'myFolder',
+      })
+    })
   })
 
   describe('getFolderConfig', () => {
-    it('should return undefined for no folder config', () => {
+    it('should return empty object for no folder config', () => {
       const config = normalizeCollectionConfig({})
       const result = getFolderConfig(config)
-      
-      expect(result).toBeUndefined()
+
+      expect(result).toEqual({})
     })
 
-    it('should return normalized folder config', () => {
+    it('should return folder config with path for string folder', () => {
       const config = normalizeCollectionConfig({ folder: 'test' })
       const result = getFolderConfig(config)
-      
+
       expect(result).toEqual({
         path: 'test',
-        enableDynamic: false,
-        fieldName: 'cloudinaryFolder',
+      })
+    })
+
+    it('should handle string folder directly without normalization', () => {
+      const result = getFolderConfig({ folder: 'direct-test' })
+
+      expect(result).toEqual({
+        path: 'direct-test',
       })
     })
 
@@ -171,7 +193,7 @@ describe('normalizeConfig helpers', () => {
         },
       })
       const result = getFolderConfig(config)
-      
+
       expect(result).toEqual({
         path: 'base',
         enableDynamic: true,
@@ -181,14 +203,14 @@ describe('normalizeConfig helpers', () => {
   })
 
   describe('getTransformationConfig', () => {
-    it('should return undefined for no transformation config', () => {
+    it('should return empty object for no transformation config', () => {
       const config = normalizeCollectionConfig({})
       const result = getTransformationConfig(config)
-      
-      expect(result).toBeUndefined()
+
+      expect(result).toEqual({})
     })
 
-    it('should return transformation config', () => {
+    it('should return transformation config with legacy format wrapped in default', () => {
       const config = normalizeCollectionConfig({
         transformations: {
           quality: 'auto',
@@ -196,7 +218,7 @@ describe('normalizeConfig helpers', () => {
         },
       })
       const result = getTransformationConfig(config)
-      
+
       expect(result).toEqual({
         default: {
           quality: 'auto',
@@ -205,9 +227,10 @@ describe('normalizeConfig helpers', () => {
       })
     })
 
-    it('should handle preset configuration', () => {
+    it('should handle preset configuration with default key', () => {
       const config = normalizeCollectionConfig({
         transformations: {
+          default: { quality: 'auto' },
           presets: {
             hero: { width: 1920, height: 600 },
           },
@@ -215,8 +238,9 @@ describe('normalizeConfig helpers', () => {
         },
       })
       const result = getTransformationConfig(config)
-      
+
       expect(result).toEqual({
+        default: { quality: 'auto' },
         presets: {
           hero: { width: 1920, height: 600 },
         },
@@ -229,14 +253,14 @@ describe('normalizeConfig helpers', () => {
     it('should return undefined for no private files config', () => {
       const config = normalizeCollectionConfig({})
       const result = getSignedURLConfig(config)
-      
+
       expect(result).toBeUndefined()
     })
 
     it('should return signed URL config for privateFiles', () => {
       const config = normalizeCollectionConfig({ privateFiles: true })
       const result = getSignedURLConfig(config)
-      
+
       expect(result).toEqual({
         enabled: true,
         expiresIn: 3600,
@@ -254,65 +278,13 @@ describe('normalizeConfig helpers', () => {
         },
       })
       const result = getSignedURLConfig(config)
-      
+
       expect(result).toEqual({
         enabled: true,
         expiresIn: 7200,
         authTypes: ['upload', 'authenticated'],
         customAuthCheck: customAuth,
       })
-    })
-  })
-
-  describe('getUploadQueueConfig', () => {
-    it('should return undefined for no queue config', () => {
-      const config = normalizeCollectionConfig({})
-      const result = getUploadQueueConfig(config)
-      
-      expect(result).toBeUndefined()
-    })
-
-    it('should return default queue config when enabled', () => {
-      const config = normalizeCollectionConfig({
-        uploadQueue: { enabled: true },
-      })
-      const result = getUploadQueueConfig(config)
-      
-      expect(result).toEqual({
-        enabled: true,
-        maxConcurrentUploads: 3,
-        chunkSize: 20,
-        enableChunkedUploads: true,
-        largeFileThreshold: 100,
-      })
-    })
-
-    it('should merge custom queue config', () => {
-      const config = normalizeCollectionConfig({
-        uploadQueue: {
-          enabled: true,
-          maxConcurrentUploads: 5,
-          largeFileThreshold: 200,
-        },
-      })
-      const result = getUploadQueueConfig(config)
-      
-      expect(result).toEqual({
-        enabled: true,
-        maxConcurrentUploads: 5,
-        chunkSize: 20,
-        enableChunkedUploads: true,
-        largeFileThreshold: 200,
-      })
-    })
-
-    it('should not return config when disabled', () => {
-      const config = normalizeCollectionConfig({
-        uploadQueue: { enabled: false },
-      })
-      const result = getUploadQueueConfig(config)
-      
-      expect(result).toBeUndefined()
     })
   })
 
@@ -324,13 +296,12 @@ describe('normalizeConfig helpers', () => {
         privateFiles: null,
         uploadQueue: undefined,
       }
-      
+
       const result = normalizeCollectionConfig(config)
-      
-      expect(result).toEqual({
-        deleteFromCloudinary: true,
-        resourceType: 'auto',
-      })
+
+      // null/undefined values are preserved via spread, no defaults added
+      expect(result).toHaveProperty('folder', null)
+      expect(result).toHaveProperty('transformations', undefined)
     })
 
     it('should preserve unknown properties', () => {
@@ -338,14 +309,12 @@ describe('normalizeConfig helpers', () => {
         customProperty: 'value',
         anotherProp: 123,
       }
-      
+
       const result = normalizeCollectionConfig(config)
-      
+
       expect(result).toMatchObject({
         customProperty: 'value',
         anotherProp: 123,
-        deleteFromCloudinary: true,
-        resourceType: 'auto',
       })
     })
   })

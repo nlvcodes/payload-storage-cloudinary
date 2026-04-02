@@ -39,8 +39,10 @@ vi.mock('cloudinary', () => ({
 }))
 
 // Mock Payload CMS plugin-cloud-storage
+// cloudStoragePlugin takes config and returns a plugin function (Config) => Config
+// The real plugin modifies collections in the incoming config; the mock just passes through
 vi.mock('@payloadcms/plugin-cloud-storage', () => ({
-  cloudStoragePlugin: vi.fn((config) => config),
+  cloudStoragePlugin: vi.fn((_adapterConfig) => (incomingConfig: any) => incomingConfig),
 }))
 
 // Global test utilities

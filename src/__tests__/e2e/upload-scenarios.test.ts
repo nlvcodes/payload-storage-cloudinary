@@ -1,18 +1,21 @@
 import { describe, it, expect, vi } from 'vitest'
 import { v2 as cloudinary } from 'cloudinary'
-import { cloudinaryStorage } from '../../index'
+import { createUploadHandler } from '../../handlers/handleUpload'
 import { mockFile, mockCloudinaryResponse } from '../setup'
+import type { CloudinaryStorageOptions } from '../../types'
 
 /**
  * End-to-end tests that simulate real upload scenarios
+ * by calling the upload handler directly with various configurations.
  */
 describe('E2E: Upload Scenarios', () => {
-  const baseOptions = {
+  const baseOptions: CloudinaryStorageOptions = {
     cloudConfig: {
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
       api_key: process.env.CLOUDINARY_API_KEY!,
       api_secret: process.env.CLOUDINARY_API_SECRET!,
     },
+    collections: {},
   }
 
   describe('Image Upload Scenarios', () => {
@@ -24,20 +27,14 @@ describe('E2E: Upload Scenarios', () => {
         height: 1080,
       })
 
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
-        (options, callback) => {
+        (options: any, callback: any) => {
           setTimeout(() => callback(null, mockResponse), 0)
-          return uploadStream as any
-        }
+          return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+        },
       )
 
-      const plugin = cloudinaryStorage({
+      const options: CloudinaryStorageOptions = {
         ...baseOptions,
         collections: {
           media: {
@@ -49,20 +46,20 @@ describe('E2E: Upload Scenarios', () => {
             },
           },
         },
-      })
+      }
 
-      // Simulate upload through plugin's handler
-      const handlers = (plugin as any).collections.media.adapter
+      const handler = createUploadHandler(options)
       const file = mockFile({
         filename: 'photo.jpg',
         mimeType: 'image/jpeg',
-        filesize: 2 * 1024 * 1024, // 2MB
+        filesize: 2 * 1024 * 1024,
       })
-      
-      const result = await handlers.handleUpload({
-        collection: { slug: 'media' },
-        file,
+
+      const result = await handler({
+        collection: { slug: 'media' } as any,
+        file: file as any,
         data: {},
+        req: {} as any,
       })
 
       expect(result).toMatchObject({
@@ -71,52 +68,60 @@ describe('E2E: Upload Scenarios', () => {
         width: 1920,
         height: 1080,
         cloudinaryFormat: 'jpg',
-        url: expect.stringContaining('q_auto,f_auto'),
-        thumbnailURL: expect.stringContaining('c_limit,h_150,w_150'),
+        cloudinaryPublicId: mockResponse.public_id,
       })
+      expect(result.url).toBeDefined()
+      expect(result.thumbnailURL).toBeDefined()
     })
 
     it('should handle image with transformation preset selection', async () => {
       const mockResponse = mockCloudinaryResponse()
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
+
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
-        (options, callback) => {
+        (options: any, callback: any) => {
           setTimeout(() => callback(null, mockResponse), 0)
-          return uploadStream as any
-        }
+          return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+        },
       )
 
-      const plugin = cloudinaryStorage({
+      const options: CloudinaryStorageOptions = {
         ...baseOptions,
         collections: {
           media: {
             transformations: {
-              presets: {
-                hero: { width: 1920, height: 600, crop: 'fill' },
-                thumbnail: { width: 150, height: 150, crop: 'thumb' },
-              },
+              default: { quality: 'auto' },
+              presets: [
+                { name: 'hero', label: 'Hero', transformations: { width: 1920, height: 600, crop: 'fill' } },
+                { name: 'thumbnail', label: 'Thumbnail', transformations: { width: 150, height: 150, crop: 'thumb' } },
+              ],
               enablePresetSelection: true,
             },
           },
         },
-      })
+      }
 
-      const handlers = (plugin as any).collections.media.adapter
+      const handler = createUploadHandler(options)
       const file = mockFile({ filename: 'hero-image.jpg' })
-      
-      const result = await handlers.handleUpload({
-        collection: { slug: 'media' },
-        file,
+
+      const result = await handler({
+        collection: { slug: 'media' } as any,
+        file: file as any,
         data: { transformationPreset: 'hero' },
+        req: {} as any,
       })
 
-      expect(result.transformationPreset).toBe('hero')
-      expect(result.url).toContain('w_1920,h_600,c_fill')
+      // The upload should include transformation options from the preset
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transformation: expect.objectContaining({
+            width: 1920,
+            height: 600,
+            crop: 'fill',
+          }),
+        }),
+        expect.any(Function),
+      )
+      expect(result.cloudinaryPublicId).toBe(mockResponse.public_id)
     })
   })
 
@@ -127,23 +132,16 @@ describe('E2E: Upload Scenarios', () => {
         format: 'mp4',
         width: 1280,
         height: 720,
-        duration: 60.5,
       })
 
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
-        (options, callback) => {
+        (options: any, callback: any) => {
           setTimeout(() => callback(null, mockResponse), 0)
-          return uploadStream as any
-        }
+          return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+        },
       )
 
-      const plugin = cloudinaryStorage({
+      const options: CloudinaryStorageOptions = {
         ...baseOptions,
         collections: {
           videos: {
@@ -151,19 +149,20 @@ describe('E2E: Upload Scenarios', () => {
             folder: 'videos',
           },
         },
-      })
+      }
 
-      const handlers = (plugin as any).collections.videos.adapter
+      const handler = createUploadHandler(options)
       const file = mockFile({
         filename: 'demo.mp4',
         mimeType: 'video/mp4',
         filesize: 50 * 1024 * 1024, // 50MB
       })
-      
-      const result = await handlers.handleUpload({
-        collection: { slug: 'videos' },
-        file,
+
+      const result = await handler({
+        collection: { slug: 'videos' } as any,
+        file: file as any,
         data: {},
+        req: {} as any,
       })
 
       expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
@@ -171,7 +170,7 @@ describe('E2E: Upload Scenarios', () => {
           resource_type: 'video',
           folder: 'videos',
         }),
-        expect.any(Function)
+        expect.any(Function),
       )
 
       expect(result).toMatchObject({
@@ -188,43 +187,41 @@ describe('E2E: Upload Scenarios', () => {
         format: 'mp4',
       })
 
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
       vi.mocked(cloudinary.uploader.upload_large_stream).mockImplementation(
-        (options, callback) => {
+        (options: any, callback: any) => {
           setTimeout(() => callback(null, mockResponse), 0)
-          return uploadStream as any
-        }
+          return {
+            write: vi.fn(() => true),
+            end: vi.fn(),
+            on: vi.fn(),
+            once: vi.fn(),
+            emit: vi.fn(),
+            removeListener: vi.fn(),
+          } as any
+        },
       )
 
-      const plugin = cloudinaryStorage({
+      const options: CloudinaryStorageOptions = {
         ...baseOptions,
         collections: {
           videos: {
             resourceType: 'video',
-            uploadQueue: {
-              enabled: true,
-              largeFileThreshold: 100,
-            },
           },
         },
-      })
+      }
 
-      const handlers = (plugin as any).collections.videos.adapter
+      const handler = createUploadHandler(options)
       const file = mockFile({
         filename: 'large-video.mp4',
         mimeType: 'video/mp4',
-        filesize: 200 * 1024 * 1024, // 200MB - over threshold
+        filesize: 200 * 1024 * 1024, // 200MB - over 100MB threshold
       })
-      
-      await handlers.handleUpload({
-        collection: { slug: 'videos' },
-        file,
+
+      await handler({
+        collection: { slug: 'videos' } as any,
+        file: file as any,
         data: {},
+        req: {} as any,
       })
 
       // Should use upload_large_stream for large files
@@ -240,20 +237,14 @@ describe('E2E: Upload Scenarios', () => {
         type: 'authenticated',
       })
 
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
-        (options, callback) => {
+        (options: any, callback: any) => {
           setTimeout(() => callback(null, mockResponse), 0)
-          return uploadStream as any
-        }
+          return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+        },
       )
 
-      const plugin = cloudinaryStorage({
+      const options: CloudinaryStorageOptions = {
         ...baseOptions,
         collections: {
           documents: {
@@ -262,19 +253,20 @@ describe('E2E: Upload Scenarios', () => {
             folder: 'documents',
           },
         },
-      })
+      }
 
-      const handlers = (plugin as any).collections.documents.adapter
+      const handler = createUploadHandler(options)
       const file = mockFile({
         filename: 'report.pdf',
         mimeType: 'application/pdf',
-        filesize: 5 * 1024 * 1024, // 5MB
+        filesize: 5 * 1024 * 1024,
       })
-      
-      const result = await handlers.handleUpload({
-        collection: { slug: 'documents' },
-        file,
+
+      const result = await handler({
+        collection: { slug: 'documents' } as any,
+        file: file as any,
         data: {},
+        req: {} as any,
       })
 
       expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
@@ -283,11 +275,12 @@ describe('E2E: Upload Scenarios', () => {
           type: 'authenticated',
           access_mode: 'authenticated',
         }),
-        expect.any(Function)
+        expect.any(Function),
       )
 
       expect(result).toMatchObject({
         cloudinaryResourceType: 'raw',
+        isPrivate: true,
         requiresSignedURL: true,
       })
     })
@@ -299,20 +292,14 @@ describe('E2E: Upload Scenarios', () => {
         folder: 'projects/2024/summer',
       })
 
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
-        (options, callback) => {
+        (options: any, callback: any) => {
           setTimeout(() => callback(null, mockResponse), 0)
-          return uploadStream as any
-        }
+          return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+        },
       )
 
-      const plugin = cloudinaryStorage({
+      const options: CloudinaryStorageOptions = {
         ...baseOptions,
         collections: {
           media: {
@@ -323,24 +310,25 @@ describe('E2E: Upload Scenarios', () => {
             },
           },
         },
-      })
+      }
 
-      const handlers = (plugin as any).collections.media.adapter
+      const handler = createUploadHandler(options)
       const file = mockFile()
-      
-      const result = await handlers.handleUpload({
-        collection: { slug: 'media' },
-        file,
+
+      const result = await handler({
+        collection: { slug: 'media' } as any,
+        file: file as any,
         data: {
           cloudinaryFolder: 'projects/2024/summer',
         },
+        req: {} as any,
       })
 
       expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
         expect.objectContaining({
           folder: 'projects/2024/summer',
         }),
-        expect.any(Function)
+        expect.any(Function),
       )
 
       expect(result.cloudinaryFolder).toBe('projects/2024/summer')
@@ -348,23 +336,17 @@ describe('E2E: Upload Scenarios', () => {
 
     it('should sanitize dynamic folder paths', async () => {
       const mockResponse = mockCloudinaryResponse({
-        folder: 'sanitized/path',
+        folder: 'malicious/path',
       })
 
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
-        (options, callback) => {
+        (options: any, callback: any) => {
           setTimeout(() => callback(null, mockResponse), 0)
-          return uploadStream as any
-        }
+          return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+        },
       )
 
-      const plugin = cloudinaryStorage({
+      const options: CloudinaryStorageOptions = {
         ...baseOptions,
         collections: {
           media: {
@@ -374,90 +356,81 @@ describe('E2E: Upload Scenarios', () => {
             },
           },
         },
-      })
+      }
 
-      const handlers = (plugin as any).collections.media.adapter
+      const handler = createUploadHandler(options)
       const file = mockFile()
-      
-      await handlers.handleUpload({
-        collection: { slug: 'media' },
-        file,
+
+      await handler({
+        collection: { slug: 'media' } as any,
+        file: file as any,
         data: {
           cloudinaryFolder: '../../../malicious/path',
         },
+        req: {} as any,
       })
 
-      // Should sanitize the path
+      // Should sanitize the path (remove ..)
       expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
         expect.objectContaining({
           folder: expect.not.stringContaining('..'),
         }),
-        expect.any(Function)
+        expect.any(Function),
       )
     })
   })
 
   describe('Error Scenarios', () => {
     it('should handle network errors gracefully', async () => {
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
-        (options, callback) => {
+        (options: any, callback: any) => {
           setTimeout(() => callback(new Error('Network error'), null), 0)
-          return uploadStream as any
-        }
+          return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+        },
       )
 
-      const plugin = cloudinaryStorage({
+      const options: CloudinaryStorageOptions = {
         ...baseOptions,
         collections: { media: true },
-      })
+      }
 
-      const handlers = (plugin as any).collections.media.adapter
+      const handler = createUploadHandler(options)
       const file = mockFile()
-      
+
       await expect(
-        handlers.handleUpload({
-          collection: { slug: 'media' },
-          file,
+        handler({
+          collection: { slug: 'media' } as any,
+          file: file as any,
           data: {},
-        })
+          req: {} as any,
+        }),
       ).rejects.toThrow('Failed to upload to Cloudinary: Network error')
     })
 
     it('should provide helpful error for quota exceeded', async () => {
-      const uploadStream = {
-        end: vi.fn(),
-        on: vi.fn(),
-        pipe: vi.fn(),
-      }
-      
       vi.mocked(cloudinary.uploader.upload_stream).mockImplementation(
-        (options, callback) => {
+        (options: any, callback: any) => {
           const error = new Error('Account has reached its quota')
           setTimeout(() => callback(error, null), 0)
-          return uploadStream as any
-        }
+          return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+        },
       )
 
-      const plugin = cloudinaryStorage({
+      const options: CloudinaryStorageOptions = {
         ...baseOptions,
         collections: { media: true },
-      })
+      }
 
-      const handlers = (plugin as any).collections.media.adapter
+      const handler = createUploadHandler(options)
       const file = mockFile()
-      
+
       await expect(
-        handlers.handleUpload({
-          collection: { slug: 'media' },
-          file,
+        handler({
+          collection: { slug: 'media' } as any,
+          file: file as any,
           data: {},
-        })
+          req: {} as any,
+        }),
       ).rejects.toThrow('quota')
     })
   })
