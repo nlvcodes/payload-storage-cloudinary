@@ -78,8 +78,9 @@ describe('transformations helpers', () => {
 
       expect(cloudinary.url).toHaveBeenCalledWith('my-image', expect.objectContaining({
         secure: true,
-        transformation: undefined,
       }))
+      const callArgs = vi.mocked(cloudinary.url).mock.calls[0][1]
+      expect(callArgs).not.toHaveProperty('transformation')
     })
 
     it('should include version when provided', () => {

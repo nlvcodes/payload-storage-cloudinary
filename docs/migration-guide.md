@@ -122,7 +122,7 @@ collections: {
 ```typescript
 collections: {
   documents: {
-    privateFiles: true, // Automatically enables signed URLs with 1-hour expiry
+    privateFiles: true, // Stores private files as authenticated and enables signed URLs
   }
 }
 
@@ -131,7 +131,6 @@ collections: {
   documents: {
     privateFiles: {
       enabled: true,
-      expiresIn: 7200, // 2 hours
       customAuthCheck: (req) => !!req.user,
     }
   }
@@ -139,6 +138,12 @@ collections: {
 ```
 
 The `signedURLs` field is deprecated and automatically mapped to `privateFiles`.
+
+**From 1.3.0:**
+- `expiresIn` and `authToken` are deprecated and ignored. Cloudinary signed URLs don't expire, and these settings never made them expire. The plugin logs one warning at startup if either is set. Remove them.
+- Every private original uploads as an `authenticated` asset, including with `publicTransformation`. Signed URLs are `authenticated`, include the asset version, and carry no auth token.
+- The signed-URL endpoints no longer return `expiresIn` or `expiresAt`.
+- A new `cloudinaryType` field records each asset's delivery type (`upload` or `authenticated`). On Postgres or SQLite, create a Payload migration for the new column before you deploy.
 
 ## New Features
 
@@ -210,6 +215,22 @@ collections: {
 ```
 
 ## Breaking Changes
+
+### Signed URL Endpoints Enforce Access (1.3.0)
+
+Before 1.3.0, the signed URL endpoints skipped your collection's `read` access, so any caller could get a URL for any private file. From 1.3.0:
+
+- Both endpoints run the collection's `read` access. A refused caller gets a 403, or a 404 when `read` returns a query that excludes the document.
+- `customAuthCheck` decides who gets the original, and it also gates `transformedUrl` in REST reads with preset selection.
+- On a `publicTransformation` collection with no `customAuthCheck`, nobody gets the original through the endpoints. Add a `customAuthCheck` for the readers who should get it.
+- The batch endpoint returns `{ results: [...] }`, one result per requested ID. A refused ID has a `status` and no URL.
+- `customAuthCheck` receives the whole document as stored on the endpoints, in the server helpers and on reads: every field, even one the reader has no field `read` access to, with relationship fields as IDs.
+- `isAccessAllowedByID({ req, collection, id })` is new. It looks the document up with your collection's `read` access enforced and decides on the stored document in every locale, exactly as the endpoints and the server helpers do.
+- `isAccessAllowed(req, doc, config)` is deprecated and logs a warning once. It decides only on the document you pass. On a localized collection a raw database row holds each localized field keyed by locale, so a check such as `doc.locked !== true` passes for every reader. Called the 1.2.x way, with a bare `SignedURLConfig` or no config, it returns your `customAuthCheck`'s answer, and `false` when there is no `customAuthCheck` (1.2.x returned `true`).
+
+**Migration for `isAccessAllowed`:** replace `isAccessAllowed(req, doc, config)` with `isAccessAllowedByID({ req, collection, id })`. Until you do, pass the collection's plugin config, not its `privateFiles` object, and a document read with every locale flattened, never a raw database row. A call with no config, or with a `SignedURLConfig` that has no `customAuthCheck`, refuses every reader.
+
+**Migration:** Check that each private collection's `read` access says who may read its files. If you set `read: () => true` and relied on an `afterRead` hook to hide private files, replace it with a `read` access that refuses those callers.
 
 ### Transformation Preset Selection
 

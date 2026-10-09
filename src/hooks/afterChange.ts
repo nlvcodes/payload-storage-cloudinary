@@ -1,431 +1,184 @@
-import type { CollectionAfterChangeHook } from 'payload'
+import { APIError, type CollectionAfterChangeHook, type PayloadRequest } from 'payload'
 import type { CloudinaryCollectionConfig } from '../types.js'
-import { v2 as cloudinary } from 'cloudinary'
-import { generateSignedURL } from '../helpers/signedURLs.js'
-import { getSignedURLConfig, getTransformationConfig } from '../helpers/normalizeConfig.js'
+import { assetFieldsOf, type DeliveryAsset } from '../helpers/deliveryURL.js'
+import { messageOf } from '../helpers/errorMessage.js'
+import { renameAsset } from '../helpers/renameAsset.js'
+import { writeStoredRow, writeVersionRow, type VersionRow } from '../helpers/storedRows.js'
+import { createAfterReadHook } from './afterRead.js'
 import {
-  buildWatermarkTransformation,
-  buildImageWatermarkTransformation,
-  buildBlurTransformation,
-} from '../helpers/watermark.js'
+  forgetMove,
+  recordMove,
+  storedRow,
+  takePlannedMove,
+  type AssetMove,
+  type PlannedMove,
+} from './assetMoves.js'
+import { PRIVACY_CHANGE_FAILED } from './beforeChange.js'
 
-export const createAfterChangeHook =
-  (collectionSlug: string, config: CloudinaryCollectionConfig): CollectionAfterChangeHook =>
-  async ({ doc, previousDoc, req }) => {
-    // Debug logging for transformation changes
-    if (doc.cloudinaryPublicId) {
-      req.payload.logger.info({
-        msg: 'AfterChange hook triggered',
-        collection: collectionSlug,
-        cloudinaryPublicId: doc.cloudinaryPublicId,
-        hasCloudinaryUrl: !!doc.cloudinaryUrl,
-        operation: previousDoc ? 'update' : 'create',
-        previousUrl: previousDoc?.url,
-        currentUrl: doc.url,
-        urlChanged: previousDoc?.url !== doc.url,
-      })
-    }
+/**
+ * Moves an asset from `authenticated` to `upload` once the save that marks the file public has
+ * written its row. The beforeChange hook plans the move, and this hook carries it out on the
+ * caller's `req`, so its writes join the save's transaction where the adapter has one.
+ *
+ * - When the rename fails, the hook writes the row's privacy and folder fields back and fails the
+ *   save with a 502. A transaction rolls the whole save back as well.
+ * - When recording the moved asset fails, the hook moves the asset back to `authenticated` and
+ *   writes the row back before the save fails. When the asset can't move back, the row keeps
+ *   saying public, as the asset is.
+ * - When the save fails later, after this hook, a transaction rolls the row back to private while
+ *   the asset is at `upload`. The afterError hook moves the asset back for a REST request.
+ *   Payload runs no collection hook for a failed GraphQL or Local API call, so there the asset
+ *   stays at `upload` until the file is saved again. The plugin registers this hook after the
+ *   collection's own afterChange hooks to keep that window small.
+ * - On an adapter without transactions the row keeps every write made before the failure. The
+ *   row then says public, records the asset this hook moved, and so agrees with Cloudinary.
+ */
+export const createAfterChangeHook = (
+  collectionSlug: string,
+  config: CloudinaryCollectionConfig,
+): CollectionAfterChangeHook => {
+  const afterRead = createAfterReadHook(collectionSlug, config)
 
-    // Check if we need to update URLs
-    const privacyChanged = previousDoc?.isPrivate !== doc.isPrivate
-    const transformConfig = getTransformationConfig(config)
-    const presetFieldName = transformConfig.presetFieldName || 'transformationPreset'
-    // For hasMany fields, we need to compare arrays properly
-    const currentPresets = doc[presetFieldName]
-    const previousPresets = previousDoc?.[presetFieldName]
-    const presetChanged = JSON.stringify(currentPresets) !== JSON.stringify(previousPresets)
-    const publicPreviewFieldName =
-      transformConfig.publicTransformation?.fieldName || 'hasPublicTransformation'
-    const publicPreviewChanged =
-      previousDoc?.[publicPreviewFieldName] !== doc[publicPreviewFieldName]
-    const watermarkFieldName =
-      transformConfig.publicTransformation?.watermark?.textFieldName || 'watermarkText'
-    const watermarkChanged = previousDoc?.[watermarkFieldName] !== doc[watermarkFieldName]
-    const typeFieldName =
-      transformConfig.publicTransformation?.typeFieldName || 'transformationType'
-    const typeChanged = previousDoc?.[typeFieldName] !== doc[typeFieldName]
+  return async ({ collection, context, doc, operation, previousDoc, req }) => {
+    if (operation !== 'update') return doc
+    const move = takePlannedMove(req, collectionSlug, previousDoc?.id ?? doc?.id)
+    if (!move) return doc
 
+    // A draft save writes a version and leaves the published row as it was. While that row says
+    // private, the asset stays `authenticated`.
+    const row = await storedRow(req, collectionSlug, move.id)
     if (
-      !doc.cloudinaryPublicId ||
-      (!privacyChanged &&
-        !presetChanged &&
-        !publicPreviewChanged &&
-        !watermarkChanged &&
-        !typeChanged)
+      !row ||
+      row.isPrivate === true ||
+      row.requiresSignedURL === true ||
+      row.cloudinaryPublicId !== move.from.publicId
     ) {
+      req.payload.logger.info({
+        msg: 'Kept the Cloudinary asset authenticated: the stored document still says private',
+        collection: collectionSlug,
+        cloudinaryPublicId: move.from.publicId,
+      })
       return doc
     }
 
-    // Log what changes triggered the URL update
-    req.payload.logger.info({
-      msg: 'Updating URLs due to changes',
+    let renamed: DeliveryAsset
+    try {
+      renamed = await renameAsset(move.from, move.target)
+    } catch (error) {
+      req.payload.logger.error({
+        msg: 'Failed to change the Cloudinary delivery type',
+        collection: collectionSlug,
+        cloudinaryPublicId: move.from.publicId,
+        error: messageOf(error),
+      })
+      await restoreRow(req, move)
+      throw new APIError(PRIVACY_CHANGE_FAILED, 502, undefined, true)
+    }
+    const done: AssetMove = {
       collection: collectionSlug,
-      cloudinaryPublicId: doc.cloudinaryPublicId,
-      changes: {
-        privacyChanged,
-        presetChanged,
-        publicPreviewChanged,
-        watermarkChanged,
-        typeChanged,
-      },
+      id: move.id,
+      from: move.from,
+      to: renamed,
+    }
+    recordMove(req, done)
+
+    const assetFields = assetFieldsOf(renamed)
+    try {
+      await writeStoredRow(req.payload, req, collectionSlug, move.id, assetFields)
+      await recordInLatestVersion(req, collectionSlug, move, assetFields)
+    } catch (error) {
+      // When the asset can't move back, the row keeps saying public, as the asset is.
+      if (await moveBack(req, done)) await restoreRow(req, move, move.from)
+      throw error
+    }
+
+    req.payload.logger.info({
+      msg: `Renamed Cloudinary asset ${move.from.publicId} to ${renamed.publicId}`,
+      collection: collectionSlug,
+      deliveryType: renamed.deliveryType,
     })
 
-    const signedURLConfig = getSignedURLConfig(config)
-
-    // Only update main URLs if privacy changed
-    if (privacyChanged) {
-      // Update URLs based on new privacy settings
-      if (doc.isPrivate && signedURLConfig) {
-        // File is now private - generate signed URLs
-        doc.requiresSignedURL = true
-
-        // Update the main URL to be a signed URL
-        doc.url = generateSignedURL(
-          {
-            publicId: doc.cloudinaryPublicId,
-            version: doc.cloudinaryVersion,
-            resourceType: doc.cloudinaryResourceType,
-            format: doc.cloudinaryFormat,
-            transformations: transformConfig.default,
-          },
-          signedURLConfig,
-        )
-
-        // Update original URL to be signed as well
-        doc.originalUrl = generateSignedURL(
-          {
-            publicId: doc.cloudinaryPublicId,
-            version: doc.cloudinaryVersion,
-            resourceType: doc.cloudinaryResourceType,
-            format: doc.cloudinaryFormat,
-            // No transformations for original
-          },
-          signedURLConfig,
-        )
-      } else {
-        // File is now public - generate regular URLs
-        doc.requiresSignedURL = false
-
-        // Update the main URL to be a regular URL
-        if (transformConfig.default && Object.keys(transformConfig.default).length > 0) {
-          doc.url = cloudinary.url(doc.cloudinaryPublicId, {
-            secure: true,
-            version: doc.cloudinaryVersion,
-            resource_type: doc.cloudinaryResourceType,
-            transformation: transformConfig.default,
-          })
-        } else {
-          doc.url = cloudinary.url(doc.cloudinaryPublicId, {
-            secure: true,
-            version: doc.cloudinaryVersion,
-            resource_type: doc.cloudinaryResourceType,
-          })
-        }
-
-        // Update original URL to be a regular URL
-        doc.originalUrl = cloudinary.url(doc.cloudinaryPublicId, {
-          secure: true,
-          version: doc.cloudinaryVersion,
-          resource_type: doc.cloudinaryResourceType,
-          type: 'upload',
-          format: doc.cloudinaryFormat,
-        })
-      }
+    // The response was read before the move, so rebuild its URLs from the moved asset.
+    if (!doc || !('cloudinaryPublicId' in doc)) return doc
+    for (const [field, value] of Object.entries(assetFields)) {
+      if (field in doc) doc[field] = value
     }
-
-    // Update URL if preset changed and preserveOriginal is true
-    if (
-      transformConfig.preserveOriginal &&
-      transformConfig.enablePresetSelection &&
-      presetChanged
-    ) {
-      // Build combined transformations from selected presets
-      let combinedTransformations: Record<string, any> = {}
-
-      // Start with default transformations if any
-      if (transformConfig.default) {
-        combinedTransformations = { ...transformConfig.default }
-      }
-
-      // Add transformations from selected presets
-      if (doc[presetFieldName] && transformConfig.presets) {
-        // Handle both single and multiple selections
-        const presetArray = Array.isArray(doc[presetFieldName])
-          ? doc[presetFieldName]
-          : [doc[presetFieldName]]
-
-        for (const presetName of presetArray) {
-          const preset = transformConfig.presets.find((p) => p.name === presetName)
-          if (preset) {
-            // Merge transformations (later presets override earlier ones)
-            combinedTransformations = { ...combinedTransformations, ...preset.transformations }
-          }
-        }
-      }
-
-      // Generate the URL based on whether we have transformations and privacy settings
-      if (Object.keys(combinedTransformations).length > 0) {
-        // Generate URL with transformations
-        if (doc.isPrivate && signedURLConfig) {
-          // Generate signed URL with transformations
-          doc.transformedUrl = generateSignedURL(
-            {
-              publicId: doc.cloudinaryPublicId,
-              version: doc.cloudinaryVersion,
-              resourceType: doc.cloudinaryResourceType,
-              format: doc.cloudinaryFormat,
-              transformations: combinedTransformations,
-            },
-            signedURLConfig,
-          )
-        } else {
-          // Generate public URL with transformations
-          doc.transformedUrl = cloudinary.url(doc.cloudinaryPublicId, {
-            secure: true,
-            version: doc.cloudinaryVersion,
-            resource_type: doc.cloudinaryResourceType || 'image',
-            transformation: combinedTransformations,
-          })
-        }
-      } else {
-        // No transformations selected, clear the transformed URL
-        doc.transformedUrl = null
-      }
-    }
-
-    // Update public transformation URL if needed
-    if (
-      transformConfig.publicTransformation?.enabled &&
-      (publicPreviewChanged || watermarkChanged || typeChanged)
-    ) {
-      const fieldName = transformConfig.publicTransformation.fieldName || 'hasPublicTransformation'
-
-      if (doc[fieldName] === true && doc.isPrivate) {
-        // Upload a permanently transformed version
-        req.payload.logger.info({
-          msg: 'Creating permanently transformed public version',
-          collection: collectionSlug,
-          transformationType: doc[typeFieldName] || 'watermark',
-        })
-
-        try {
-          // Delete old public transformation if it exists
-          if (doc.publicTransformationPublicId) {
-            try {
-              await cloudinary.uploader.destroy(doc.publicTransformationPublicId, {
-                resource_type: doc.cloudinaryResourceType || 'image',
-                invalidate: true,
-              })
-              req.payload.logger.info({
-                msg: 'Deleted old public transformation',
-                publicId: doc.publicTransformationPublicId,
-              })
-            } catch (error) {
-              req.payload.logger.warn({
-                msg: 'Failed to delete old public transformation',
-                error: error instanceof Error ? error.message : 'Unknown error',
-              })
-            }
-          }
-
-          let publicTransformation
-
-          // Get the transformation type
-          const typeFieldName =
-            transformConfig.publicTransformation.typeFieldName || 'transformationType'
-          const transformationType = doc[typeFieldName] || 'watermark'
-
-          if (
-            transformationType === 'watermark' &&
-            transformConfig.publicTransformation.watermark
-          ) {
-            const watermarkFieldName =
-              transformConfig.publicTransformation.watermark.textFieldName || 'watermarkText'
-            const watermarkText = doc[watermarkFieldName]
-
-            // Build watermark transformation
-            if (transformConfig.publicTransformation.watermark.imageId) {
-              publicTransformation = buildImageWatermarkTransformation(
-                transformConfig.publicTransformation.watermark,
-              )
-            } else {
-              publicTransformation = buildWatermarkTransformation(
-                transformConfig.publicTransformation.watermark,
-                watermarkText,
-              )
-            }
-          } else if (transformationType === 'blur') {
-            // Build blur transformation
-            publicTransformation = buildBlurTransformation(
-              transformConfig.publicTransformation.blur,
-            )
-          }
-
-          // Create a new public ID for the transformed version
-          const publicTransformationPublicId = `${doc.cloudinaryPublicId}_public_${transformationType}`
-
-          // Generate a URL with the transformation applied
-          const transformedUrl = cloudinary.url(doc.cloudinaryPublicId, {
-            secure: true,
-            transformation: publicTransformation,
-            format: doc.cloudinaryFormat || 'jpg',
-          })
-
-          // Upload the transformed version as a new permanent image
-          const transformedResult = await cloudinary.uploader.upload(transformedUrl, {
-            public_id: publicTransformationPublicId,
-            resource_type: doc.cloudinaryResourceType || 'image',
-            overwrite: true,
-            invalidate: true,
-          })
-
-          if (transformedResult && transformedResult.secure_url) {
-            // Store the public transformation URL and public ID
-            doc.publicTransformationUrl = transformedResult.secure_url
-            doc.publicTransformationPublicId = publicTransformationPublicId
-
-            // Also set this as the preview URL since it's the permanently transformed version
-            doc.previewUrl = transformedResult.secure_url
-
-            req.payload.logger.info({
-              msg: 'Public transformation created successfully',
-              publicId: publicTransformationPublicId,
-              url: doc.publicTransformationUrl,
-              previewUrl: doc.previewUrl,
-              docId: doc.id,
-              willReturn: true,
-            })
-          }
-        } catch (error) {
-          req.payload.logger.error({
-            msg: 'Failed to create public transformation',
-            error: error instanceof Error ? error.message : 'Unknown error',
-          })
-          doc.publicTransformationUrl = null
-          doc.publicTransformationPublicId = null
-          doc.previewUrl = null
-        }
-      } else {
-        // Clean up if public transformation is disabled
-        if (doc.publicTransformationPublicId) {
-          try {
-            await cloudinary.uploader.destroy(doc.publicTransformationPublicId, {
-              resource_type: doc.cloudinaryResourceType || 'image',
-              invalidate: true,
-            })
-            req.payload.logger.info({
-              msg: 'Deleted public transformation (disabled)',
-              publicId: doc.publicTransformationPublicId,
-            })
-          } catch (error) {
-            req.payload.logger.warn({
-              msg: 'Failed to delete public transformation',
-              error: error instanceof Error ? error.message : 'Unknown error',
-            })
-          }
-        }
-        doc.publicTransformationUrl = null
-        doc.publicTransformationPublicId = null
-        doc.previewUrl = null
-      }
-    }
-
-    // Generate preview URL with transformation presets if public transformation is enabled and any relevant field changed
-    // Skip if we already have a preview URL from the permanent public transformation
-    if (
-      transformConfig.publicTransformation?.enabled &&
-      doc.isPrivate &&
-      doc[publicPreviewFieldName] === true &&
-      (presetChanged || publicPreviewChanged || watermarkChanged || typeChanged) &&
-      !doc.previewUrl
-    ) {
-      const selectedPresets = doc[presetFieldName]
-
-      if (selectedPresets) {
-        // Build combined transformations from selected presets
-        let previewTransformations: Record<string, any> = {}
-
-        // Start with default transformations if any
-        if (transformConfig.default) {
-          previewTransformations = { ...transformConfig.default }
-        }
-
-        // Add transformations from selected presets
-        if (transformConfig.presets) {
-          // Handle both single and multiple selections
-          const presetArray = Array.isArray(selectedPresets) ? selectedPresets : [selectedPresets]
-
-          for (const presetName of presetArray) {
-            const preset = transformConfig.presets.find((p) => p.name === presetName)
-            if (preset) {
-              // Merge transformations (later presets override earlier ones)
-              previewTransformations = { ...previewTransformations, ...preset.transformations }
-            }
-          }
-        }
-
-        // Get the transformation type (watermark/blur)
-        const transformationType = doc[typeFieldName] || 'watermark'
-
-        // Build the public transformation (watermark/blur)
-        let publicTransformation
-        if (transformationType === 'watermark' && transformConfig.publicTransformation.watermark) {
-          const watermarkText = doc[watermarkFieldName]
-
-          if (transformConfig.publicTransformation.watermark.imageId) {
-            publicTransformation = buildImageWatermarkTransformation(
-              transformConfig.publicTransformation.watermark,
-            )
-          } else {
-            publicTransformation = buildWatermarkTransformation(
-              transformConfig.publicTransformation.watermark,
-              watermarkText,
-            )
-          }
-        } else if (transformationType === 'blur') {
-          publicTransformation = buildBlurTransformation(transformConfig.publicTransformation.blur)
-        }
-
-        // Combine preset transformations with public transformation
-        if (Object.keys(previewTransformations).length > 0 || publicTransformation) {
-          // Cloudinary applies transformations in order, so we apply presets first, then watermark/blur
-          const combinedTransformation = []
-
-          // Add preset transformations first
-          if (Object.keys(previewTransformations).length > 0) {
-            combinedTransformation.push(previewTransformations)
-          }
-
-          // Add public transformation (watermark/blur) on top
-          if (publicTransformation) {
-            if (Array.isArray(publicTransformation)) {
-              combinedTransformation.push(...publicTransformation)
-            } else {
-              combinedTransformation.push(publicTransformation)
-            }
-          }
-
-          doc.previewUrl = cloudinary.url(doc.cloudinaryPublicId, {
-            secure: true,
-            version: doc.cloudinaryVersion,
-            resource_type: doc.cloudinaryResourceType || 'image',
-            type: 'upload', // Always use 'upload' for public URLs
-            transformation: combinedTransformation,
-          })
-        } else {
-          doc.previewUrl = null
-        }
-      }
-    }
-
-    // Log what we're returning
-    if (doc.publicTransformationUrl) {
-      req.payload.logger.info({
-        msg: 'AfterChange hook returning doc with public transformation',
-        publicTransformationUrl: doc.publicTransformationUrl,
-        publicTransformationPublicId: doc.publicTransformationPublicId,
-      })
-    }
-
-    return doc
+    return (await afterRead({ collection, context, doc, req })) ?? doc
   }
+}
+
+/**
+ * Records the moved asset in the version row the save wrote, when the collection keeps
+ * versions, so that row does not read as private while the asset is at `upload`.
+ */
+async function recordInLatestVersion(
+  req: PayloadRequest,
+  collection: string,
+  move: PlannedMove,
+  assetFields: Record<string, unknown>,
+): Promise<void> {
+  if (!req.payload.collections[collection]?.config.versions) return
+  const { docs } = await req.payload.db.findVersions<Record<string, any>>({
+    collection,
+    where: { parent: { equals: move.id } },
+    sort: '-updatedAt',
+    limit: 1,
+    req,
+  })
+  const latest = docs[0] as VersionRow | undefined
+  if (!latest || latest.version?.cloudinaryPublicId !== move.from.publicId) return
+
+  await writeVersionRow(req.payload, req, collection, latest, {
+    ...latest.version,
+    ...assetFields,
+  })
+}
+
+/** Moves an asset back to where it was before this request moved it. */
+export async function moveBack(req: PayloadRequest, move: AssetMove): Promise<boolean> {
+  try {
+    await renameAsset(move.to, {
+      publicId: move.from.publicId,
+      deliveryType: move.from.deliveryType,
+    })
+    forgetMove(req, move)
+    return true
+  } catch (error) {
+    req.payload.logger.error({
+      msg:
+        `Failed to move Cloudinary asset ${move.to.publicId} back to ${move.from.deliveryType}. ` +
+        `Move it in Cloudinary, or save the document again.`,
+      collection: move.collection,
+      id: move.id,
+      error: messageOf(error),
+    })
+    return false
+  }
+}
+
+/**
+ * Writes the row's privacy and folder fields back to what they were before the save, and the
+ * asset fields too when given, after the move to `upload` failed. In a transaction the rollback
+ * does this too. Without one, and in a bulk update, which commits the documents that saved, this
+ * write is what puts the row back.
+ */
+async function restoreRow(
+  req: PayloadRequest,
+  move: PlannedMove,
+  asset?: DeliveryAsset,
+): Promise<void> {
+  try {
+    await writeStoredRow(req.payload, req, move.collection, move.id, {
+      ...move.restore,
+      ...(asset ? assetFieldsOf(asset) : {}),
+    })
+  } catch (error) {
+    // The row keeps the asset's `authenticated` type, so it still reads as private.
+    req.payload.logger.error({
+      msg: 'Failed to restore the privacy of a document after a failed Cloudinary move',
+      collection: move.collection,
+      id: move.id,
+      error: messageOf(error),
+    })
+  }
+}

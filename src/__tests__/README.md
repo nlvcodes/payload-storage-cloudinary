@@ -14,9 +14,14 @@ __tests__/
 │   └── endpoints/       # API endpoint tests
 ├── integration/         # Integration tests
 │   └── plugin.test.ts   # Plugin configuration and setup
-└── e2e/                 # End-to-end scenarios
-    └── upload-scenarios.test.ts
+├── e2e/                 # End-to-end scenarios
+│   └── upload-scenarios.test.ts
+└── payload/             # Real Payload tests (own Vitest project, no setup.ts mocks)
+    └── harness/         # Boots Payload on SQLite and mocks the Cloudinary network calls
 ```
+
+`vitest.workspace.ts` runs two projects: `unit` (everything except `payload/`, with the
+mocks in `setup.ts`) and `payload`. Run one with `pnpm vitest run --project payload`.
 
 ## Running Tests
 
@@ -56,6 +61,32 @@ Test how different parts work together:
 - Field creation based on configuration
 - Endpoint registration for private files
 
+### Real Payload Tests
+
+Boot a real Payload instance with the plugin installed, on a fresh SQLite file per test file,
+and send fetch `Request`s through Payload's `handleEndpoints`:
+
+```typescript
+let harness: PayloadHarness
+beforeAll(async () => {
+  harness = await startPayload() // `media` collection with `privateFiles: true`
+})
+afterAll(() => harness.stop())
+
+const user = await harness.createUser()
+const res = await harness.request('/api/media', {
+  method: 'POST',
+  body: pngUpload('secret.png'),
+  user, // omit for an anonymous request
+})
+harness.cloudinary.calls // every upload API and Admin API call, in order
+```
+
+Only the Cloudinary upload API (upload, upload_stream, rename, destroy, explicit) and the Admin
+API calls the plugin makes are mocked. `cloudinary.url()` runs for real, so assert on the
+real URL shape and signature. Assert on what a caller sees: status, response fields, the
+recorded Cloudinary calls, and the database.
+
 ### End-to-End Tests
 
 Simulate real-world usage scenarios:
@@ -70,8 +101,8 @@ Simulate real-world usage scenarios:
 
 The test suite uses Vitest for mocking:
 
-1. **Cloudinary SDK**: Fully mocked to avoid real API calls
-2. **Payload Plugin**: Mocked to test plugin configuration
+1. **Cloudinary SDK**: Fully mocked to avoid real API calls (`unit` project only)
+2. **Payload Plugin**: Mocked to test plugin configuration (`unit` project only)
 3. **File System**: Uses in-memory buffers instead of real files
 
 ## Key Test Utilities

@@ -7,18 +7,21 @@ import type {
 } from '../types.js'
 import { v2 as cloudinary } from 'cloudinary'
 import { queueManager } from '../queue/queueManager.js'
-import { generatePrivateUploadOptions, generateSignedURL } from '../helpers/signedURLs.js'
+import { generatePrivateUploadOptions } from '../helpers/signedURLs.js'
+import {
+  buildDeliveryURL,
+  deliveryTypeOf,
+  STORED_URL_FIELDS,
+  THUMBNAIL_TRANSFORMATION,
+  type DeliveryAsset,
+} from '../helpers/deliveryURL.js'
 import {
   normalizeCollectionConfig,
   getFolderConfig,
   getTransformationConfig,
   getSignedURLConfig,
+  fieldNamesOf,
 } from '../helpers/normalizeConfig.js'
-import {
-  buildWatermarkTransformation,
-  buildImageWatermarkTransformation,
-  buildBlurTransformation,
-} from '../helpers/watermark.js'
 
 export const createUploadHandler =
   (options: CloudinaryStorageOptions): HandleUpload =>
@@ -52,7 +55,7 @@ export const createUploadHandler =
       // In this case, we should not re-upload to Cloudinary
       if (data?.cloudinaryPublicId) {
         // Ensure required fields are present to prevent fetch attempts
-        if (!data.url && data.cloudinaryUrl) {
+        if (!data.url && data.cloudinaryUrl && data.isPrivate !== true) {
           data.url = data.cloudinaryUrl
         }
 
@@ -66,35 +69,9 @@ export const createUploadHandler =
       throw new Error('No file buffer provided for upload')
     }
 
-    // Additional check: if we have an existing cloudinaryPublicId,
-    // this might be an update where Payload is re-sending the same file or a similar file
-    if (data?.cloudinaryPublicId) {
-      // Check if this is the same file or just an update
-      const isSameFile =
-        data.filename === file.filename ||
-        (data.filename &&
-          file.filename &&
-          data.filename.replace(/[- ]\d+\./g, '.') === file.filename.replace(/[- ]\d+\./g, '.'))
-
-      if (isSameFile) {
-        // IMPORTANT: We need to ensure all required fields are present even when skipping upload
-        // This prevents Payload from trying to fetch the file for processing
-        if (!data.url && data.cloudinaryUrl) {
-          data.url = data.cloudinaryUrl
-        }
-
-        // Ensure file metadata is present
-        data.filename = file.filename || data.filename
-        data.filesize = file.filesize || data.filesize
-        data.mimeType = file.mimeType || data.mimeType
-
-        // Skip the upload and return early - Payload is re-sending the same file
-        return data
-      } else {
-        // Note: The old file will remain in Cloudinary unless manually deleted
-        // This is by design to prevent accidental data loss
-      }
-    }
+    // A file buffer with an existing cloudinaryPublicId is a replacement. The storage plugin
+    // names the incoming file after the document and deletes the old asset before this handler
+    // runs, so the file always uploads, with the document's current privacy and folder.
 
     try {
       const uploadOptions = buildUploadOptions(config, file.filename, data, file.mimeType)
@@ -244,56 +221,20 @@ function processUploadResult(
 ): CloudinaryDocumentData {
   if (result) {
     data.cloudinaryPublicId = result.public_id
-    data.cloudinaryUrl = result.secure_url
     data.cloudinaryResourceType = result.resource_type
     data.cloudinaryFormat = result.format
     data.cloudinaryVersion = result.version
-
-    // Generate thumbnail URL for admin display - note the uppercase URL
-    // For private files, we need to ensure the thumbnail is accessible
-    const thumbnailUrl = cloudinary.url(result.public_id, {
-      secure: true,
-      version: result.version,
-      resource_type: result.resource_type || 'image',
-      type: result.type || 'upload', // Use 'upload' type for public access
-      transformation: {
-        width: 150,
-        height: 150,
-        crop: 'fill',
-        gravity: 'auto',
-        quality: 'auto',
-        fetch_format: 'auto',
-      },
-    })
-    data.thumbnailURL = thumbnailUrl // Changed to uppercase URL to match Payload's expectation
-
-    // Store the original URL (without transformations)
-    // This should be the raw URL without any transformations
-    const originalUrl = cloudinary.url(result.public_id, {
-      secure: true,
-      version: result.version,
-      resource_type: result.resource_type || 'image',
-      type: result.type || 'upload',
-      format: result.format,
-      // No transformations here - this is the original
-    })
-    data.originalUrl = originalUrl
-
-    // Get transformation config once for reuse
-    const transformConfig = getTransformationConfig(config)
-
-    // Store the main URL - this will be the same as originalUrl if preserveOriginal is true
-    // Transformations will be applied dynamically via afterRead hook
-    data.url = originalUrl
+    data.cloudinaryType = deliveryTypeOf(result.type)
 
     // Store additional metadata that Payload expects
     data.filename = file.filename
     data.filesize = result.bytes || file.filesize // Use Cloudinary's byte count if available
     data.mimeType = file.mimeType
 
-    // If it's an image, try to extract dimensions from Cloudinary response
-    if (result.width) data.width = result.width
-    if (result.height) data.height = result.height
+    // Take the dimensions from the Cloudinary response. A file without them (a raw file) stores
+    // null, so a replacement does not keep the dimensions of the image it replaces.
+    data.width = result.width || null
+    data.height = result.height || null
 
     // Store the actual folder used
     if (result.folder) {
@@ -302,8 +243,6 @@ function processUploadResult(
 
     // Handle private file settings based on user's checkbox value
     if (config.privateFiles) {
-      const signedURLConfig = getSignedURLConfig(config)
-
       // If isPrivate is explicitly false, respect that
       if (data.isPrivate === false) {
         data.requiresSignedURL = false
@@ -311,82 +250,41 @@ function processUploadResult(
         // Otherwise, mark as private (default behavior)
         data.isPrivate = true
         data.requiresSignedURL = true
-
-        // If public transformations are enabled, we need to generate signed URLs
-        // for the original and main URLs since the file was uploaded as public
-        if (transformConfig.publicTransformation?.enabled && signedURLConfig) {
-          // Replace URLs with signed versions
-          data.url = generateSignedURL(
-            {
-              publicId: result.public_id,
-              version: result.version,
-              resourceType: result.resource_type,
-              format: result.format,
-              transformations: transformConfig.default,
-            },
-            signedURLConfig,
-          )
-
-          data.originalUrl = generateSignedURL(
-            {
-              publicId: result.public_id,
-              version: result.version,
-              resourceType: result.resource_type,
-              format: result.format,
-            },
-            signedURLConfig,
-          )
-        }
       }
     }
 
-    // Handle public transformation URL for private files
-    if (transformConfig.publicTransformation?.enabled && data.isPrivate) {
-      const fieldName = transformConfig.publicTransformation.fieldName || 'hasPublicTransformation'
-
-      // Only generate public transformation URL if the checkbox is checked
-      if (data[fieldName] === true) {
-        let publicTransformation
-
-        // Get the transformation type
-        const typeFieldName =
-          transformConfig.publicTransformation.typeFieldName || 'transformationType'
-        const transformationType = data[typeFieldName] || 'watermark'
-
-        if (transformationType === 'watermark' && transformConfig.publicTransformation.watermark) {
-          const watermarkFieldName =
-            transformConfig.publicTransformation.watermark.textFieldName || 'watermarkText'
-          const watermarkText = data[watermarkFieldName] as string | undefined
-
-          // Build watermark transformation
-          if (transformConfig.publicTransformation.watermark.imageId) {
-            publicTransformation = buildImageWatermarkTransformation(
-              transformConfig.publicTransformation.watermark,
-            )
-          } else {
-            publicTransformation = buildWatermarkTransformation(
-              transformConfig.publicTransformation.watermark,
-              watermarkText,
-            )
-          }
-        } else if (transformationType === 'blur') {
-          // Build blur transformation
-          publicTransformation = buildBlurTransformation(transformConfig.publicTransformation.blur)
-        }
-
-        // For public transformation URLs, we need to use 'upload' type
-        // even if the original was uploaded as 'authenticated'
-        const publicTransformationUrl = cloudinary.url(result.public_id, {
-          secure: true,
-          version: result.version,
-          resource_type: result.resource_type || 'image',
-          type: 'upload', // Always use 'upload' for public URLs
-          format: result.format,
-          transformation: publicTransformation,
-        })
-        data.publicTransformationUrl = publicTransformationUrl
-      }
+    // A private file stores no delivery URL. A stored URL is a permanent link, so the afterRead
+    // hook builds every URL at read time, after the access check. Every private upload nulls
+    // each stored URL field, so an update also clears any URL the row still holds, such as one
+    // of the asset a replacement replaces or one a version before 1.3.0 stored.
+    if (data.isPrivate === true) {
+      // null clears the stored column. A missing key keeps the stored value on an update. The
+      // database adapter drops a null for a field the collection doesn't have.
+      const stored = data as Record<string, unknown>
+      for (const field of STORED_URL_FIELDS) stored[field] = null
+      return data
     }
+
+    data.cloudinaryUrl = result.secure_url
+
+    const asset: DeliveryAsset = {
+      publicId: result.public_id,
+      version: result.version,
+      resourceType: result.resource_type,
+      format: result.format,
+      deliveryType: data.cloudinaryType,
+    }
+
+    // Generate thumbnail URL for admin display - note the uppercase URL
+    data.thumbnailURL = buildDeliveryURL(asset, { transformation: THUMBNAIL_TRANSFORMATION })
+
+    // Store the original URL (without transformations)
+    const originalUrl = buildDeliveryURL(asset)
+    data.originalUrl = originalUrl
+
+    // Store the main URL - this will be the same as originalUrl if preserveOriginal is true
+    // Transformations will be applied dynamically via afterRead hook
+    data.url = originalUrl
   }
   return data
 }
@@ -420,15 +318,9 @@ function buildUploadOptions(
   const signedURLConfig = getSignedURLConfig(config)
   const transformConfig = getTransformationConfig(config)
 
-  // IMPORTANT: If public transformations are enabled, we should NOT upload as authenticated
-  // because authenticated resources cannot have public transformation URLs
-  if (
-    signedURLConfig &&
-    data &&
-    data.isPrivate !== false &&
-    !transformConfig.publicTransformation?.enabled
-  ) {
-    // Only apply private upload options if public transformations are NOT enabled
+  // Every private original uploads as authenticated, publicTransformation included,
+  // so nothing reaches it without a signature
+  if (signedURLConfig && data && data.isPrivate !== false) {
     const privateOptions = generatePrivateUploadOptions(signedURLConfig)
     Object.assign(options, privateOptions)
   }
@@ -487,7 +379,7 @@ function buildUploadOptions(
     // Only apply transformations during upload if preserveOriginal is false
     // Apply preset if selected
     if (transformConfig.enablePresetSelection && data) {
-      const presetField = transformConfig.presetFieldName || 'transformationPreset'
+      const presetField = fieldNamesOf(transformConfig).transformationPreset
       const selectedPreset = data[presetField]
 
       if (selectedPreset && transformConfig.presets) {

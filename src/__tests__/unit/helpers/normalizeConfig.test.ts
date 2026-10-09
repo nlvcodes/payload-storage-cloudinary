@@ -39,10 +39,7 @@ describe('normalizeConfig helpers', () => {
 
       const result = normalizeCollectionConfig(config)
 
-      expect(result.privateFiles).toEqual({
-        enabled: true,
-        expiresIn: 3600,
-      })
+      expect(result.privateFiles).toEqual({ enabled: true })
     })
 
     it('should normalize string folder to object with path', () => {
@@ -92,6 +89,26 @@ describe('normalizeConfig helpers', () => {
         default: { quality: 'auto' },
         presets: { thumbnail: { width: 150 } },
         enablePresetSelection: true,
+      })
+    })
+
+    it('should preserve new-format transformations without a default key', () => {
+      const config: CloudinaryCollectionConfig = {
+        transformations: {
+          presets: [{ name: 'card', label: 'Card', transformations: { width: 400 } }],
+          enablePresetSelection: true,
+          preserveOriginal: true,
+          publicTransformation: { enabled: true },
+        },
+      }
+
+      const result = normalizeCollectionConfig(config)
+
+      expect(result.transformations).toEqual({
+        presets: [{ name: 'card', label: 'Card', transformations: { width: 400 } }],
+        enablePresetSelection: true,
+        preserveOriginal: true,
+        publicTransformation: { enabled: true },
       })
     })
 
@@ -227,6 +244,18 @@ describe('normalizeConfig helpers', () => {
       })
     })
 
+    it('should read publicTransformation from a config without a default key', () => {
+      const transformations = {
+        preserveOriginal: true,
+        publicTransformation: { enabled: true },
+      }
+
+      expect(getTransformationConfig({ transformations })).toEqual(transformations)
+      expect(getTransformationConfig(normalizeCollectionConfig({ transformations }))).toEqual(
+        transformations,
+      )
+    })
+
     it('should handle preset configuration with default key', () => {
       const config = normalizeCollectionConfig({
         transformations: {
@@ -261,10 +290,7 @@ describe('normalizeConfig helpers', () => {
       const config = normalizeCollectionConfig({ privateFiles: true })
       const result = getSignedURLConfig(config)
 
-      expect(result).toEqual({
-        enabled: true,
-        expiresIn: 3600,
-      })
+      expect(result).toEqual({ enabled: true })
     })
 
     it('should handle custom signed URL config', () => {

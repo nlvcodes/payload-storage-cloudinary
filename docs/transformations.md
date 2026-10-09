@@ -101,6 +101,8 @@ transformations: {
 
 The plugin now creates different URL fields based on your configuration:
 
+> **Private files:** on a collection with `privateFiles`, these URLs are built when the document is read, from the reader's access, and none of them is stored. A private file never returns `originalUrl`. See [URL fields of a private file](../README.md#url-fields-of-a-private-file).
+
 ### With `preserveOriginal: true` (Recommended)
 - **`url`**: Always contains the original, untransformed URL
 - **`originalUrl`**: Same as `url` - the original file

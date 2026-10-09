@@ -1,10 +1,10 @@
 import { defineConfig } from 'vitest/config'
 
+// Shared settings. The projects (unit, payload) live in vitest.workspace.ts.
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    setupFiles: ['./src/__tests__/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -15,6 +15,7 @@ export default defineConfig({
         '**/*.d.ts',
         '**/*.test.ts',
         '**/*.spec.ts',
+        'src/__tests__/payload/harness/**',
       ],
     },
   },

@@ -55,7 +55,9 @@ export async function fetchSignedURL(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: 'Failed to fetch signed URL' }))
-    throw new Error(errorData.message || `HTTP ${response.status}: Failed to fetch signed URL`)
+    throw new Error(
+      errorData.error || errorData.message || `HTTP ${response.status}: Failed to fetch signed URL`,
+    )
   }
 
   const data = await response.json()
@@ -107,7 +109,11 @@ export async function fetchSignedURLs(
     const errorData = await response
       .json()
       .catch(() => ({ message: 'Failed to fetch signed URLs' }))
-    throw new Error(errorData.message || `HTTP ${response.status}: Failed to fetch signed URLs`)
+    throw new Error(
+      errorData.error ||
+        errorData.message ||
+        `HTTP ${response.status}: Failed to fetch signed URLs`,
+    )
   }
 
   const data = await response.json()
@@ -126,7 +132,8 @@ export async function fetchSignedURLs(
 }
 
 /**
- * React hook for fetching a signed URL with automatic refetch before expiry
+ * React hook that fetches a signed URL and refetches it on a timer. Signed URLs don't expire:
+ * the refetch is for access, so a reader who loses access to the file stops getting new links.
  * Note: This hook requires React to be available in the global scope
  *
  * @example
@@ -143,7 +150,10 @@ export function useSignedURL(
   collection: string,
   docId: string | null | undefined,
   options?: {
-    /** Refetch buffer in seconds before URL expires (default: 300 = 5 minutes) */
+    /**
+     * Seconds taken off the 3600-second refetch interval (default 300, so about every 55
+     * minutes). Raise it to refetch more often. It is not an expiry margin.
+     */
     refetchBuffer?: number
     /** Other fetch options */
     fetchOptions?: Parameters<typeof fetchSignedURL>[2]
@@ -198,9 +208,9 @@ export function useSignedURL(
         })
         setUrl(signedUrl)
 
-        // Schedule refetch before expiry (default 5 minutes before)
+        // Schedule the next refetch: 3600 seconds minus the buffer, at least 1 minute
         const refetchBuffer = (options?.refetchBuffer || 300) * 1000
-        const expiryTime = 3600 * 1000 // 1 hour default expiry
+        const expiryTime = 3600 * 1000 // The refetch interval before the buffer, not a URL expiry
         const refetchDelay = Math.max(expiryTime - refetchBuffer, 60000) // At least 1 minute
 
         timeoutId = setTimeout(fetchUrl, refetchDelay)
@@ -344,8 +354,8 @@ export async function getImageURL(
     return fetchSignedURL(collection, doc.id, options)
   }
 
-  // For public files with transformations, apply them client-side
-  const baseUrl = doc.url || doc.cloudinaryUrl || ''
+  // For public files with transformations, apply them client-side. `url` is built at read time.
+  const baseUrl = doc.url || ''
   if (options?.transformations && baseUrl) {
     // Extract base URL and apply transformations
     const urlParts = baseUrl.split('/upload/')
@@ -418,9 +428,7 @@ export function createPrivateImageComponent(React: any) {
     // For public files, just return the image
     if (!needsSignedUrl) {
       const publicUrl =
-        includeTransformations && doc?.transformedUrl
-          ? doc.transformedUrl
-          : doc?.url || doc?.cloudinaryUrl
+        includeTransformations && doc?.transformedUrl ? doc.transformedUrl : doc?.url
 
       return React.createElement('img', {
         src: publicUrl,
@@ -450,11 +458,9 @@ export function createPrivateImageComponent(React: any) {
     // For private files, we must use the signed URL
     const privateUrl = signedUrl
 
-    // Get public preview URL
-    const publicPreviewUrl =
-      includeTransformations && doc?.previewUrl
-        ? doc.previewUrl // previewUrl combines transformations with watermark/blur
-        : doc?.publicTransformationURL || doc?.thumbnailURL
+    // The watermarked or blurred preview, with the selected presets. Never the thumbnail,
+    // which isn't watermarked.
+    const publicPreviewUrl = doc?.previewUrl
 
     // Show public preview if available and not showing private
     if (!showPrivate && includePublicPreview && publicPreviewUrl) {
@@ -570,10 +576,7 @@ export function createPremiumImageComponent(React: any) {
 
     // For public files, just show them
     if (!needsSignedUrl) {
-      const url =
-        includeTransformations && doc?.transformedUrl
-          ? doc.transformedUrl
-          : doc?.url || doc?.cloudinaryUrl
+      const url = includeTransformations && doc?.transformedUrl ? doc.transformedUrl : doc?.url
 
       return React.createElement('img', {
         src: url,
@@ -586,11 +589,8 @@ export function createPremiumImageComponent(React: any) {
 
     // For private files, check authentication
     if (!isAuthenticated) {
-      // Show public preview if available
-      const previewUrl =
-        includeTransformations && doc?.previewUrl
-          ? doc.previewUrl
-          : doc?.publicTransformationURL || doc?.thumbnailURL
+      // The watermarked or blurred preview. Never the thumbnail, which isn't watermarked.
+      const previewUrl = doc?.previewUrl
 
       if (previewUrl) {
         return React.createElement('div', { className: 'relative' }, [

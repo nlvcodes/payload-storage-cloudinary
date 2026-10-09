@@ -1,6 +1,6 @@
 # Watermark Configuration
 
-The plugin supports advanced watermark functionality for public previews of private files. This allows you to create watermarked versions that anyone can view while keeping the original files private.
+The plugin supports watermarked or blurred previews of private files. Readers who may not get the original see a watermarked preview, signed when the original is `authenticated`, while the original stays private. See [Previews for Private Files](./public-transformation-example.md) for who gets which URL.
 
 ## Basic Configuration
 
@@ -63,7 +63,7 @@ watermark: {
 
 ### Blur Alternative
 
-You can use blur instead of watermarks for public previews:
+You can use blur instead of watermarks for previews:
 
 ```typescript
 blur: {
@@ -75,36 +75,38 @@ blur: {
 ## How It Works
 
 1. **Upload a file** with "Private File" checked
-2. **Enable Public Preview** using the checkbox
+2. **Enable Preview** using the checkbox
 3. **Choose transformation type**: watermark or blur
 4. **Enter watermark text** (or use the default)
-5. **Plugin generates** a public URL with the watermark/blur applied
+5. **Plugin builds** `previewUrl` when the document is read: a signed URL of the `authenticated` original with the watermark or blur applied
+
+No separate preview asset is uploaded. With no `watermark` settings, the watermark text is `WATERMARK`.
 
 ## Admin Interface
 
 The plugin automatically adds these fields to your admin interface:
 
 - **Private File**: Checkbox to control file privacy
-- **Enable Public Preview**: Toggle for public previews
+- **Enable Preview**: Turns the preview on for the document
 - **Transformation Type**: Choose between watermark and blur
 - **Watermark Text**: Custom text field (when watermark is selected)
 
 ## URL Generation
 
-The plugin generates multiple URL fields:
-
-- `publicTransformationUrl`: Basic watermark or blur preview
-- `previewUrl`: Combined transformation presets + watermark/blur
+`previewUrl` carries the preview: the default transformations and selected presets, then the watermark or blur. `publicTransformationUrl` is deprecated. Versions before 1.3.0 set it, and new uploads don't.
 
 ### Example Watermark URL Structure
 
 ```
-https://res.cloudinary.com/[cloud]/image/upload/
-l_text:Arial_50:[watermark_text]/
-co_rgb:808080,a_-45,o_50/
-fl_layer_apply/
+https://res.cloudinary.com/[cloud]/image/authenticated/
+s--[signature]--/
+[presets]/
+c_scale,w_800/
+a_-45,co_rgb:808080,e_anti_removal,fl_layer_apply.tiled,g_center,l_text:Arial_50_bold_letter_spacing_15:[watermark_text],o_50/
 v[version]/[public_id].[format]
 ```
+
+For an `authenticated` original, the signature covers every transformation, so Cloudinary answers 401 to a URL edited to remove the watermark. Don't splice transformations into it. A private file uploaded before 1.3.0 stays an `upload` asset with an unsigned preview until you run `migratePrivateAssets`. See [Files Uploaded Before 1.3.0](./public-transformation-example.md#files-uploaded-before-130).
 
 ## Frontend Usage
 
@@ -112,17 +114,17 @@ v[version]/[public_id].[format]
 
 ```tsx
 function ImageWithPreview({ doc }) {
-  if (!doc.isPrivate) {
-    // Public file - use transformed URL if available
+  if (doc.transformedUrl || doc.url) {
+    // A public file, or a reader who may get the original
     return <img src={doc.transformedUrl || doc.url} alt={doc.alt} />
   }
   
-  // Private file - show public preview if available
-  if (doc.publicTransformationUrl) {
+  // A reader who may only see the preview
+  if (doc.previewUrl) {
     return (
       <div>
-        <img src={doc.publicTransformationUrl} alt={`${doc.alt} - Preview`} />
-        <p>This is a watermarked preview. Login to see the original.</p>
+        <img src={doc.previewUrl} alt={`${doc.alt} (preview)`} />
+        <p>This is a watermarked preview. Log in to see the original.</p>
       </div>
     )
   }
@@ -134,30 +136,7 @@ function ImageWithPreview({ doc }) {
 
 ### With Combined Presets
 
-```tsx
-function AdvancedImageDisplay({ doc }) {
-  if (!doc.isPrivate) {
-    return <img src={doc.transformedUrl || doc.url} alt={doc.alt} />
-  }
-  
-  // Use combined preview (presets + watermark/blur)
-  if (doc.previewUrl) {
-    return (
-      <div>
-        <img src={doc.previewUrl} alt={`${doc.alt} - Preview`} />
-        <p>Preview with transformations and watermark</p>
-      </div>
-    )
-  }
-  
-  // Fallback to basic preview
-  if (doc.publicTransformationUrl) {
-    return <img src={doc.publicTransformationUrl} alt={`${doc.alt} - Preview`} />
-  }
-  
-  return <div>Authentication required</div>
-}
-```
+`previewUrl` already carries the selected presets under the watermark or blur, so the basic example above covers it.
 
 ## Complete Configuration Example
 
@@ -223,4 +202,5 @@ cloudinaryStorage({
 ### No Preview URL Generated
 - Verify `publicTransformation.enabled: true`
 - Check that file is marked as private
-- Ensure user enabled public preview in admin interface
+- Ensure the editor checked "Enable Preview" in the admin interface
+- Check that the reader may read the document under the collection's `read` access

@@ -64,17 +64,35 @@ export interface UploadQueueConfig {
 
 export interface SignedURLConfig {
   enabled: boolean // Must be explicitly enabled
-  expiresIn?: number // seconds, default 3600 (1 hour)
+  /**
+   * @deprecated Ignored, and warned about at startup. Cloudinary signed URLs don't expire.
+   */
+  expiresIn?: number
+  /**
+   * @deprecated Ignored, and warned about at startup. URLs are signed, never token-authenticated.
+   */
+  authToken?: unknown
   authTypes?: Array<'upload' | 'authenticated'>
   includeTransformations?: boolean
   /**
-   * Custom authentication check for signed URLs.
-   * This runs AFTER Payload's collection-level access control.
-   * The document has already passed read access checks when this is called.
-   * Use this for additional business logic beyond standard access control.
+   * Decides who gets the original file.
+   * This runs AFTER the collection's `read` access, so the reader has already passed it.
+   * The signed URL endpoints, the server helpers and every read of a private file run it.
+   * With `publicTransformation` enabled and no customAuthCheck, nobody gets the original.
    * @param req - The request object with user information
-   * @param doc - The document that passed Payload's access control
-   * @returns Whether to allow generating a signed URL
+   * @param doc - The document that passed the collection's `read` access, as stored, whatever
+   *   the lookup selected or field `read` access hid. It has the shape a read with every field
+   *   visible returns at `depth: 0`: relationship fields hold IDs, and each localized field
+   *   holds its value in one locale, with the site's fallback locale. On a localized site the
+   *   check runs once per configured locale, whatever locale the reader asked for, and needs
+   *   every run to pass. A version read by ID runs it on the version and on the current
+   *   document, and needs both to pass.
+   *
+   *   To build this document the plugin reads the stored row (one more database read per
+   *   document) and runs the collection's field `afterRead` hooks on it once per configured
+   *   locale, with `overrideAccess: true`. Those hooks run again during the decision, so they
+   *   must have no side effects.
+   * @returns Whether the reader may get the original file
    */
   customAuthCheck?: (req: any, doc: any) => boolean | Promise<boolean>
 }
@@ -117,6 +135,12 @@ export type CloudinaryStoragePlugin = (
   options: CloudinaryStorageOptions,
 ) => (config: Config) => Config
 
+/** The Cloudinary types the plugin stores an asset as. */
+export const CLOUDINARY_DELIVERY_TYPES = ['upload', 'authenticated'] as const
+
+/** Where Cloudinary delivers an asset from. `authenticated` assets need a signed URL. */
+export type CloudinaryDeliveryType = (typeof CLOUDINARY_DELIVERY_TYPES)[number]
+
 // Shared Cloudinary interfaces to replace `any` types across handlers
 
 export interface CloudinaryUploadResult {
@@ -143,6 +167,7 @@ export interface CloudinaryDocumentData {
   cloudinaryResourceType?: string
   cloudinaryFormat?: string
   cloudinaryVersion?: number
+  cloudinaryType?: CloudinaryDeliveryType
   cloudinaryFolder?: string
   url?: string
   originalUrl?: string
@@ -151,10 +176,11 @@ export interface CloudinaryDocumentData {
   filename?: string
   filesize?: number
   mimeType?: string
-  width?: number
-  height?: number
+  width?: number | null
+  height?: number | null
   isPrivate?: boolean
   requiresSignedURL?: boolean
+  /** @deprecated Set by versions before 1.3.0. Read `previewUrl` instead. */
   publicTransformationUrl?: string
   uploadStatus?: string
   uploadProgress?: number

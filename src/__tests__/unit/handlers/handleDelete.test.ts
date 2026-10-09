@@ -45,7 +45,7 @@ describe('handleDelete', () => {
 
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
       'test-public-id',
-      { resource_type: 'image', invalidate: true }
+      { resource_type: 'image', type: 'upload', invalidate: true }
     )
   })
 
@@ -92,7 +92,7 @@ describe('handleDelete', () => {
 
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
       'folder/test-image',
-      { resource_type: 'image', invalidate: true }
+      { resource_type: 'image', type: 'upload', invalidate: true }
     )
   })
 
@@ -141,7 +141,7 @@ describe('handleDelete', () => {
 
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
       'test-public-id',
-      { resource_type: 'image', invalidate: true }
+      { resource_type: 'image', type: 'upload', invalidate: true }
     )
   })
 

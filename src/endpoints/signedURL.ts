@@ -1,7 +1,57 @@
-import type { Endpoint } from 'payload'
-import { generateSignedURL, generateDownloadURL, isAccessAllowed } from '../helpers/signedURLs.js'
+import { APIError, type Endpoint, type PayloadRequest } from 'payload'
+import { generateSignedURL, generateDownloadURL } from '../helpers/signedURLs.js'
+import { resolveViewsAccess } from '../helpers/accessRule.js'
+import { readStoredDocuments, type StoredRead } from '../helpers/storedDocument.js'
 import type { CloudinaryStorageOptions } from '../types.js'
+import { deliveryAssetOf } from '../helpers/deliveryURL.js'
 import { normalizeCollectionConfig, getSignedURLConfig } from '../helpers/normalizeConfig.js'
+import {
+  checkTransformations,
+  transformationsFromQuery,
+} from '../helpers/endpointTransformations.js'
+
+/**
+ * The most document IDs one batch request may ask for. A larger list is refused before any
+ * database query, so a caller can't make the endpoint build one huge `in` query.
+ */
+export const MAX_BATCH_IDS = 100
+
+const ERRORS = {
+  403: 'Access denied',
+  404: 'Document not found',
+} as const
+
+type AccessStatus = keyof typeof ERRORS
+
+/**
+ * The Local API skips access control unless overrideAccess is false, even with req, so every
+ * lookup here passes both.
+ *
+ * The status Payload chose for a refused lookup: Forbidden (403) when `read` access denies,
+ * NotFound (404) when the document is missing or outside a query-based `read`.
+ * Any other error is not an access decision, so it returns undefined.
+ */
+const accessErrorStatus = (error: unknown): AccessStatus | undefined =>
+  error instanceof APIError && (error.status === 403 || error.status === 404)
+    ? error.status
+    : undefined
+
+/**
+ * Reads the stored documents the rule decides on. 'refused' when it can't read or flatten them:
+ * an endpoint that can't decide refuses, so it fails closed.
+ */
+async function readStoredOrRefuse(
+  req: PayloadRequest,
+  collection: string,
+  ids: Array<number | string>,
+): Promise<Map<string, StoredRead> | 'refused'> {
+  try {
+    return await readStoredDocuments(req, collection, ids)
+  } catch (error) {
+    req.payload.logger.error({ err: error, msg: 'Could not read the stored document' })
+    return 'refused'
+  }
+}
 
 export const createSignedURLEndpoint = (
   collectionSlug: string,
@@ -16,26 +66,40 @@ export const createSignedURLEndpoint = (
       return Response.json({ error: 'Document ID required' }, { status: 400 })
     }
 
+    // Checked before the lookup, so a refused request signs nothing and reads nothing
+    const checked = transformationsFromQuery(req.query?.transformations)
+    if (!checked.ok) {
+      return Response.json({ error: checked.error }, { status: 400 })
+    }
+    const { transformations } = checked
+
     try {
-      // Get the document - IMPORTANT: We pass the req object to ensure
-      // Payload's collection-level access control is properly enforced.
-      // If the user doesn't have read access, this will throw an error.
-      const doc = await req.payload.findByID({
+      // Payload runs the collection's read access and throws Forbidden or NotFound
+      const readable = await req.payload.findByID({
         collection: collectionSlug,
         id,
         req,
+        overrideAccess: false,
       })
 
-      if (!doc) {
-        return Response.json({ error: 'Document not found' }, { status: 404 })
+      // The access rule decides, and the URL is built, on the document as stored, in every
+      // locale. A stored read that fails refuses, so the endpoint fails closed.
+      const stored = readable && (await readStoredOrRefuse(req, collectionSlug, [readable.id]))
+      if (stored === 'refused') {
+        return Response.json({ error: ERRORS[403] }, { status: 403 })
       }
+      const read = readable && stored?.get(String(readable.id))
+      if (!read) {
+        return Response.json({ error: ERRORS[404] }, { status: 404 })
+      }
+      const doc = read.doc
 
       // Check if this file requires signed URLs
       if (!doc.requiresSignedURL) {
         return Response.json(
           {
             error: 'This file does not require signed URLs',
-            url: doc.url,
+            url: readable.url,
           },
           { status: 400 },
         )
@@ -54,82 +118,35 @@ export const createSignedURLEndpoint = (
         )
       }
 
-      // Check access permissions
-      const hasAccess = await isAccessAllowed(req, doc, signedURLConfig)
-
-      if (!hasAccess) {
-        return Response.json({ error: 'Access denied' }, { status: 403 })
-      }
-
-      // Parse transformations from query params
-      let transformations: Record<string, any> | undefined
-      const transformParam = req.query?.transformations
-      if (transformParam) {
-        try {
-          transformations =
-            typeof transformParam === 'string' ? JSON.parse(transformParam) : transformParam
-        } catch (e) {
-          // If JSON parse fails, try to parse as comma-separated key-value pairs
-          // e.g., "width:300,height:400,crop:fill"
-          if (typeof transformParam === 'string') {
-            transformations = {}
-            transformParam.split(',').forEach((pair) => {
-              const [key, value] = pair.split(':')
-              if (key && value) {
-                transformations![key.trim()] = isNaN(Number(value)) ? value.trim() : Number(value)
-              }
-            })
-          }
-        }
+      // Only a reader with the original gets a URL here. A preview reader gets the preview from
+      // the read path, so the endpoint can't sign a caller's transformations for them.
+      if ((await resolveViewsAccess(req, read.views, config)) !== 'original') {
+        return Response.json({ error: ERRORS[403] }, { status: 403 })
       }
 
       // For authenticated uploads, we need to generate a new signed URL with transformations
-      const signedUrl = generateSignedURL(
-        {
-          publicId: doc.cloudinaryPublicId,
-          version: doc.cloudinaryVersion,
-          resourceType: doc.cloudinaryResourceType,
-          format: doc.cloudinaryFormat,
-          expiresIn: signedURLConfig.expiresIn,
-          transformations,
-        },
-        signedURLConfig,
-      )
+      const asset = deliveryAssetOf(doc)
+      const signedUrl = generateSignedURL({ ...asset, transformations }, signedURLConfig)
 
       // Also generate download URL if requested
       let downloadUrl
       if (req.query?.download === 'true') {
-        downloadUrl = generateDownloadURL(doc.cloudinaryPublicId, doc.filename, {
-          version: doc.cloudinaryVersion,
-          resourceType: doc.cloudinaryResourceType,
-          expiresIn: signedURLConfig.expiresIn,
-        })
+        downloadUrl = generateDownloadURL(asset.publicId, doc.filename, asset)
       }
 
+      // Signed URLs don't expire, so the response carries no expiry
       return Response.json({
         url: signedUrl,
         downloadUrl,
-        expiresIn: signedURLConfig.expiresIn || 3600,
-        expiresAt: new Date(Date.now() + (signedURLConfig.expiresIn || 3600) * 1000).toISOString(),
         transformations,
       })
     } catch (error) {
-      console.error('Error generating signed URL:', error)
-
-      // Check if it's an authentication error
-      if (
-        error instanceof Error &&
-        (error.message.includes('Authentication required') ||
-          error.message.includes('Unauthorized'))
-      ) {
-        return Response.json(
-          {
-            error: 'Authentication required for private files',
-          },
-          { status: 403 },
-        )
+      const status = accessErrorStatus(error)
+      if (status) {
+        return Response.json({ error: ERRORS[status] }, { status })
       }
 
+      console.error('Error generating signed URL:', error)
       return Response.json(
         {
           error: 'Failed to generate signed URL',
@@ -154,29 +171,25 @@ export const createBatchSignedURLEndpoint = (
     }
 
     const ids = (body as Record<string, unknown>).ids
-    const transformations = (body as Record<string, unknown>).transformations as
-      | Record<string, any>
-      | undefined
 
     if (!ids || !Array.isArray(ids) || !ids.every((id: unknown) => typeof id === 'string')) {
       return Response.json({ error: 'Array of document IDs required' }, { status: 400 })
     }
 
-    try {
-      // Get all documents - IMPORTANT: We pass the req object to ensure
-      // Payload's collection-level access control is properly enforced.
-      // Only documents the user has read access to will be returned.
-      const docs = await req.payload.find({
-        collection: collectionSlug,
-        where: {
-          id: {
-            in: ids,
-          },
-        },
-        limit: ids.length,
-        req,
-      })
+    if (ids.length > MAX_BATCH_IDS) {
+      return Response.json(
+        { error: `At most ${MAX_BATCH_IDS} document IDs per request` },
+        { status: 400 },
+      )
+    }
 
+    const checked = checkTransformations((body as Record<string, unknown>).transformations)
+    if (!checked.ok) {
+      return Response.json({ error: checked.error }, { status: 400 })
+    }
+    const { transformations } = checked
+
+    try {
       // Get collection config
       const collectionConfig = options.collections[collectionSlug]
       const rawConfig = typeof collectionConfig === 'boolean' ? {} : collectionConfig
@@ -190,48 +203,75 @@ export const createBatchSignedURLEndpoint = (
         )
       }
 
-      // Generate signed URLs for each document
+      const refused = (id: string, status: AccessStatus) => ({ id, status, error: ERRORS[status] })
+
+      // find returns only the documents the caller may read, or throws Forbidden
+      let docs
+      try {
+        const found = await req.payload.find({
+          collection: collectionSlug,
+          where: {
+            id: {
+              in: ids,
+            },
+          },
+          limit: ids.length,
+          req,
+          overrideAccess: false,
+        })
+        docs = found.docs
+      } catch (error) {
+        const status = accessErrorStatus(error)
+        if (!status) throw error
+        return Response.json({ results: ids.map((id) => refused(id, status)) })
+      }
+
+      // The access rule decides, and each URL is built, on the documents as stored, in every
+      // locale. A stored read that fails refuses every ID, so the endpoint fails closed.
+      const stored = await readStoredOrRefuse(
+        req,
+        collectionSlug,
+        docs.map((readable) => readable.id),
+      )
+      if (stored === 'refused') {
+        return Response.json({ results: ids.map((id) => refused(id, 403)) })
+      }
+
+      // One result per requested ID, in the order requested
       const results = await Promise.all(
-        docs.docs.map(async (doc) => {
+        ids.map(async (id) => {
+          const readable = docs.find((found) => String(found.id) === id)
+          const read = readable && stored.get(String(readable.id))
+
+          // Missing, or outside a query-based read
+          if (!readable || !read) {
+            return refused(id, 404)
+          }
+          const doc = read.doc
+
           // Check if this file requires signed URLs
           if (!doc.requiresSignedURL) {
             return {
-              id: doc.id,
-              url: doc.url,
+              id,
+              url: readable.url,
               requiresSignedURL: false,
             }
           }
 
-          // Check access permissions
-          const hasAccess = await isAccessAllowed(req, doc, signedURLConfig)
-
-          if (!hasAccess) {
-            return {
-              id: doc.id,
-              error: 'Access denied',
-            }
+          // Only a reader with the original gets a URL, so transformations apply to originals only
+          if ((await resolveViewsAccess(req, read.views, config)) !== 'original') {
+            return refused(id, 403)
           }
 
           // Generate signed URL with transformations
           const signedUrl = generateSignedURL(
-            {
-              publicId: doc.cloudinaryPublicId,
-              version: doc.cloudinaryVersion,
-              resourceType: doc.cloudinaryResourceType,
-              format: doc.cloudinaryFormat,
-              expiresIn: signedURLConfig.expiresIn,
-              transformations,
-            },
+            { ...deliveryAssetOf(doc), transformations },
             signedURLConfig,
           )
 
           return {
-            id: doc.id,
+            id,
             url: signedUrl,
-            expiresIn: signedURLConfig.expiresIn || 3600,
-            expiresAt: new Date(
-              Date.now() + (signedURLConfig.expiresIn || 3600) * 1000,
-            ).toISOString(),
             transformations,
           }
         }),

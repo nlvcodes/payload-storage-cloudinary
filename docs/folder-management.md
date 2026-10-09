@@ -90,11 +90,12 @@ const Media: CollectionConfig = {
 
 When you change the folder path for an existing file, the plugin automatically:
 
-1. **Uses Cloudinary's rename API** to move the asset
-2. **Preserves the same public ID** and version
+1. **Uses Cloudinary's rename API** to move the asset, from its stored delivery type, so private (`authenticated`) files move too
+2. **Keeps the file name part of the public ID** and the version
 3. **Updates folder location** without re-uploading
-4. **Maintains all existing URLs** and transformations
-5. **Updates stored URLs** to reflect the new location
+4. **Maintains all transformations**. The asset gets a new public ID, so URLs to the old location stop working
+5. **Updates stored URLs** of a public file to reflect the new location. A private file stores no delivery URL: its URLs are built when the document is read
+6. **Moves the asset back** when the save fails on a REST request. See [Handling Updates](./handling-updates.md#when-a-save-fails)
 
 This means you can reorganize your files without losing any data or creating duplicates.
 
@@ -224,9 +225,9 @@ export default buildConfig({
 - Nested folders are created as needed
 
 ### Asset Moving
-- Uses Cloudinary's `rename` API internally
+- Uses Cloudinary's `rename` API internally, with the asset's stored delivery type
 - Preserves all metadata and transformations
-- Updates stored URLs automatically
+- Updates a public file's stored URLs automatically, and stores none for a private file
 - Maintains version history
 
 ### Validation

@@ -12,7 +12,6 @@ export const privateFilesConfig = cloudinaryStorage({
       privateFiles: true, // All files are private by default
       signedURLs: {
         enabled: true,
-        expiresIn: 3600, // 1 hour
       },
     },
   },
@@ -29,7 +28,6 @@ export const advancedSignedURLConfig = cloudinaryStorage({
     protectedMedia: {
       signedURLs: {
         enabled: true,
-        expiresIn: 7200, // 2 hours
         includeTransformations: true,
         authTypes: ['authenticated'],
         customAuthCheck: async (req, doc) => {
@@ -66,14 +64,13 @@ export const mixedAccessConfig = cloudinaryStorage({
       privateFiles: false,
       signedURLs: {
         enabled: true,
-        expiresIn: 86400, // 24 hours
       },
       // Users can mark individual files as private
     },
   },
 })
 
-// Example 4: Time-limited downloads
+// Example 4: Downloads
 export const downloadConfig = cloudinaryStorage({
   cloudConfig: {
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
@@ -85,7 +82,6 @@ export const downloadConfig = cloudinaryStorage({
       privateFiles: true,
       signedURLs: {
         enabled: true,
-        expiresIn: 300, // 5 minutes for downloads
       },
     },
   },
@@ -149,7 +145,8 @@ export async function getGalleryUrls(imageIds: string[], collectionSlug: string)
   }, {})
 }
 
-// Example 7: Download link with expiration
+// Example 7: Download link
+// Signed URLs don't expire: hand the link only to a reader allowed to see the file.
 export function DownloadButton({ doc, collectionSlug }) {
   const [downloadUrl, setDownloadUrl] = useState(null)
   
@@ -167,7 +164,6 @@ export function DownloadButton({ doc, collectionSlug }) {
     link.download = doc.filename
     link.click()
     
-    // URL expires after use
     setDownloadUrl(null)
   }
   

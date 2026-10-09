@@ -1,6 +1,7 @@
 import type { HandleDelete } from '@payloadcms/plugin-cloud-storage/types'
 import type { CloudinaryStorageOptions, CloudinaryDocumentData } from '../types.js'
 import { v2 as cloudinary } from 'cloudinary'
+import { deliveryAssetOf } from '../helpers/deliveryURL.js'
 
 export const createDeleteHandler =
   (options: CloudinaryStorageOptions): HandleDelete =>
@@ -29,9 +30,10 @@ export const createDeleteHandler =
       const resourceType = docData.cloudinaryResourceType || 'image'
 
       if (publicId) {
-        // Delete the main asset
+        // Delete the main asset. destroy defaults to `upload`, so pass the stored type.
         await cloudinary.uploader.destroy(publicId, {
           resource_type: resourceType,
+          type: deliveryAssetOf(docData).deliveryType,
           invalidate: true, // Invalidate CDN cache
         })
 

@@ -1,5 +1,5 @@
 import { cloudStoragePlugin } from '@payloadcms/plugin-cloud-storage'
-import type { CloudinaryStorageOptions } from './types.js'
+import { CLOUDINARY_DELIVERY_TYPES, type CloudinaryStorageOptions } from './types.js'
 import type { Config } from 'payload'
 import { createUploadHandler } from './handlers/handleUpload.js'
 import { createDeleteHandler } from './handlers/handleDelete.js'
@@ -11,12 +11,44 @@ import {
   normalizeCollectionConfig,
   getFolderConfig,
   getTransformationConfig,
+  fieldNamesOf,
+  warnDeprecatedSettings,
 } from './helpers/normalizeConfig.js'
 import { createBeforeChangeHook } from './hooks/beforeChange.js'
 import { createAfterChangeHook } from './hooks/afterChange.js'
-import { createAfterReadHook } from './hooks/afterRead.js'
+import { createAfterErrorHook } from './hooks/afterError.js'
+import { createAfterReadHook, pluginReadSelect } from './hooks/afterRead.js'
+import { createBeforeReadHook } from './hooks/beforeRead.js'
 import { createBeforeValidateHook } from './hooks/beforeValidate.js'
+import { PLUGIN_CONFIG_KEY } from './helpers/accessRule.js'
+import { pluginFieldOf } from './helpers/pluginFields.js'
 import { v2 as cloudinary } from 'cloudinary'
+
+/**
+ * Field access for every field the plugin writes itself. An access-enforced create or update
+ * (REST, GraphQL, or the Local API with `overrideAccess: false`) drops the caller's value, so
+ * nobody can point a document at another asset or forge its type. Payload applies this in the
+ * field `beforeValidate` pass, before the collection hooks run, so the values the upload handler
+ * and the plugin's hooks set afterwards are stored. The Local API skips field access by default
+ * (`overrideAccess: true`), so trusted server code can still write these fields.
+ */
+const writtenByPlugin = { create: () => false, update: () => false }
+
+/**
+ * Gives each field the access PLUGIN_FIELDS (pluginFields.ts) lists for its name: writtenByPlugin,
+ * and no read for a stored delivery URL, since that is a permanent link. A field the list gives
+ * neither keeps the access it has.
+ */
+function withPluginAccess<T extends { name: string }>(fields: T[]): T[] {
+  return fields.map((field) => {
+    const listed = pluginFieldOf(field.name)
+    if (!listed?.writtenByPlugin && !listed?.hiddenFromReads) return field
+    const access = listed.hiddenFromReads
+      ? { ...(listed.writtenByPlugin ? writtenByPlugin : {}), read: () => false }
+      : writtenByPlugin
+    return { ...field, access }
+  })
+}
 
 export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
   // Validate cloud config exists
@@ -39,6 +71,7 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
   }
 
   cloudinary.config(options.cloudConfig)
+  warnDeprecatedSettings(options)
 
   const collections = Object.entries(options.collections).reduce(
     (acc, [slug, collectionConfig]) => {
@@ -53,10 +86,10 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
             handleUpload: createUploadHandler(options),
             handleDelete: createDeleteHandler(options),
             generateURL: createURLGenerator(options),
-            staticHandler: createStaticHandler(options),
+            staticHandler: createStaticHandler(),
             prefix,
             name: 'cloudinary',
-            fields: [
+            fields: withPluginAccess([
               {
                 name: 'cloudinaryPublicId',
                 type: 'text',
@@ -97,6 +130,15 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                   readOnly: true,
                 },
               },
+              {
+                name: 'cloudinaryType',
+                type: 'select',
+                options: [...CLOUDINARY_DELIVERY_TYPES],
+                admin: {
+                  hidden: true,
+                  readOnly: true,
+                },
+              },
               // Add originalUrl field to store untransformed URL
               {
                 name: 'originalUrl',
@@ -116,8 +158,7 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                   readOnly: true,
                   description: 'URL with applied transformations',
                   condition: (data: any) => {
-                    const presetField = transformConfig.presetFieldName || 'transformationPreset'
-                    return !!data[presetField]
+                    return !!data[fieldNamesOf(transformConfig).transformationPreset]
                   },
                 },
               },
@@ -150,7 +191,7 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
               ...(transformConfig.enablePresetSelection && transformConfig.presets?.length
                 ? [
                     {
-                      name: transformConfig.presetFieldName || 'transformationPreset',
+                      name: fieldNamesOf(transformConfig).transformationPreset,
                       type: 'select' as const,
                       label: 'Transformation Presets',
                       hasMany: true,
@@ -232,21 +273,19 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
               ...(transformConfig.publicTransformation?.enabled && config.privateFiles
                 ? [
                     {
-                      name:
-                        transformConfig.publicTransformation.fieldName || 'hasPublicTransformation',
+                      name: fieldNamesOf(transformConfig).hasPublicTransformation,
                       type: 'checkbox' as const,
-                      label: 'Enable Public Preview',
+                      label: 'Enable Preview',
                       defaultValue: false,
                       admin: {
                         description:
-                          'Generate a public URL with transformations for this private file',
+                          'Give readers who may not get the original a signed preview with a watermark or blur',
                         condition: (data: any) => data.isPrivate === true,
                       },
                     },
                     // Add transformation type selector
                     {
-                      name:
-                        transformConfig.publicTransformation.typeFieldName || 'transformationType',
+                      name: fieldNamesOf(transformConfig).transformationType,
                       type: 'select' as const,
                       label: 'Transformation Type',
                       defaultValue: 'watermark',
@@ -255,54 +294,40 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                         { label: 'Blur', value: 'blur' },
                       ],
                       admin: {
-                        description: 'Choose the type of transformation for public preview',
+                        description: 'Choose the transformation for the preview',
                         condition: (data: any) =>
                           data.isPrivate === true &&
-                          data[
-                            transformConfig.publicTransformation?.fieldName ||
-                              'hasPublicTransformation'
-                          ] === true,
+                          data[fieldNamesOf(transformConfig).hasPublicTransformation] === true,
                       },
                     },
                     // Add watermark text field conditionally
                     {
-                      name:
-                        transformConfig.publicTransformation.watermark?.textFieldName ||
-                        'watermarkText',
+                      name: fieldNamesOf(transformConfig).watermarkText,
                       type: 'text' as const,
                       label: 'Watermark Text',
                       defaultValue:
                         transformConfig.publicTransformation.watermark?.defaultText || '',
                       admin: {
-                        description: 'Text to display as watermark on public preview',
+                        description: 'Text to display as the watermark on the preview',
                         condition: (data: any) => {
-                          const typeField =
-                            transformConfig.publicTransformation?.typeFieldName ||
-                            'transformationType'
+                          const names = fieldNamesOf(transformConfig)
                           return (
                             data.isPrivate === true &&
-                            data[
-                              transformConfig.publicTransformation?.fieldName ||
-                                'hasPublicTransformation'
-                            ] === true &&
-                            data[typeField] === 'watermark'
+                            data[names.hasPublicTransformation] === true &&
+                            data[names.transformationType] === 'watermark'
                           )
                         },
                       },
                     },
+                    // Set by versions before 1.3.0 and kept for migratePrivateAssets. New uploads
+                    // leave it empty, and a reader without the original reads it as null.
                     {
                       name: 'publicTransformationUrl',
                       type: 'text' as const,
-                      label: 'Public Preview URL',
+                      label: 'Legacy Public Preview URL',
                       admin: {
+                        hidden: true,
                         readOnly: true,
-                        description: 'Public URL with applied transformations',
-                        condition: (data: any) =>
-                          data.isPrivate === true &&
-                          data[
-                            transformConfig.publicTransformation?.fieldName ||
-                              'hasPublicTransformation'
-                          ] === true,
                       },
                     },
                     {
@@ -314,34 +339,23 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                         readOnly: true,
                       },
                     },
-                    // Add preview URL with transformation presets
+                    // Built at read time by the afterRead hook, with or without a selected preset
                     {
                       name: 'previewUrl',
                       type: 'text' as const,
-                      label: 'Preview URL with Transformations',
+                      label: 'Preview URL',
                       admin: {
                         readOnly: true,
-                        description: 'Preview URL with selected transformation presets applied',
-                        condition: (data: any) => {
-                          const presetField =
-                            transformConfig.presetFieldName || 'transformationPreset'
-                          const hasPresets =
-                            data[presetField] &&
-                            (Array.isArray(data[presetField]) ? data[presetField].length > 0 : true)
-                          return (
-                            hasPresets &&
-                            data.isPrivate === true &&
-                            data[
-                              transformConfig.publicTransformation?.fieldName ||
-                                'hasPublicTransformation'
-                            ] === true
-                          )
-                        },
+                        description:
+                          'Signed preview URL with the selected presets and the watermark or blur',
+                        condition: (data: any) =>
+                          data.isPrivate === true &&
+                          data[fieldNamesOf(transformConfig).hasPublicTransformation] === true,
                       },
                     },
                   ]
                 : []),
-            ],
+            ]),
           }
         },
         disableLocalStorage: true,
@@ -385,7 +399,6 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
         }
 
         // Add hooks
-        const transformConfig = getTransformationConfig(config)
         const hooks = { ...(collection.hooks || {}) }
 
         // Always add beforeValidate hook to preserve Cloudinary data during updates
@@ -400,26 +413,30 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
           createBeforeChangeHook(collection.slug, config),
         ]
 
-        // Add afterChange hook for privacy changes if private files are enabled
-        if (config.privateFiles) {
-          hooks.afterChange = [
-            ...(hooks.afterChange || []),
-            createAfterChangeHook(collection.slug, config),
-          ]
-        }
+        // Always add afterChange hook to move a file made public to `upload` after the save. It
+        // runs after the collection's own afterChange hooks, so a failure there comes first.
+        hooks.afterChange = [
+          ...(hooks.afterChange || []),
+          createAfterChangeHook(collection.slug, config),
+        ]
 
-        // Add afterRead hook for dynamic URL generation with presets
-        if (transformConfig.enablePresetSelection && transformConfig.preserveOriginal) {
-          hooks.afterRead = [
-            ...(hooks.afterRead || []),
-            createAfterReadHook(collection.slug, config),
-          ]
-        }
+        // Always add afterError hook to move an asset back when a save that moved it fails
+        hooks.afterError = [...(hooks.afterError || []), createAfterErrorHook(collection.slug)]
+
+        // Always add beforeRead hook to resolve a legacy record's type before field access runs
+        hooks.beforeRead = [...(hooks.beforeRead || []), createBeforeReadHook()]
+
+        // Always add afterRead hook to build URLs at read time and drop the stored ones
+        hooks.afterRead = [...(hooks.afterRead || []), createAfterReadHook(collection.slug, config)]
 
         return {
           ...collection,
           endpoints,
           hooks,
+          // The server helpers read the access rule's config from here
+          custom: { ...collection.custom, [PLUGIN_CONFIG_KEY]: rawConfig },
+          // A read that selects fields still carries the asset fields the read hooks need
+          forceSelect: { ...collection.forceSelect, ...pluginReadSelect(config) },
         }
       })
     }
@@ -434,10 +451,21 @@ export type {
   TransformationPreset,
   SignedURLConfig,
   FolderConfig,
+  CloudinaryDeliveryType,
 } from './types.js'
 export { getTransformationUrl, commonPresets } from './helpers/transformations.js'
 export { generateSignedURL, generateDownloadURL, isAccessAllowed } from './helpers/signedURLs.js'
 export { getCloudinaryFolders } from './helpers/getCloudinaryFolders.js'
+export { changeDeliveryType } from './helpers/renameAsset.js'
+export type { DeliveryAsset } from './helpers/deliveryURL.js'
+export { migratePrivateAssets, MigrationStoppedError } from './helpers/migratePrivateAssets.js'
+export type {
+  MigratePrivateAssetsArgs,
+  DocumentRef,
+  PublicCopy,
+  FailedDocument,
+  MigrationReport,
+} from './helpers/migratePrivateAssets.js'
 export {
   fetchSignedURL,
   fetchSignedURLs,
@@ -447,6 +475,7 @@ export {
   createPrivateImageComponent,
 } from './helpers/clientHelpers.js'
 export {
+  isAccessAllowedByID,
   getSignedURL,
   getSignedURLs,
   applyTransformationsToUrl,
@@ -455,3 +484,4 @@ export {
   getPublicPreviewURL,
   getPremiumImageURL,
 } from './helpers/serverHelpers.js'
+export type { IsAccessAllowedByIDArgs } from './helpers/serverHelpers.js'

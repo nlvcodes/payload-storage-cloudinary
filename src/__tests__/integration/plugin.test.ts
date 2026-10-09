@@ -123,22 +123,6 @@ describe('cloudinaryStorage plugin integration', () => {
       expect(mediaCollection?.hooks?.beforeChange?.length).toBeGreaterThanOrEqual(1)
     })
 
-    it('should add afterChange hook for private files collections', () => {
-      const plugin = cloudinaryStorage({
-        cloudConfig: validCloudConfig,
-        collections: { media: { privateFiles: true } },
-      })
-
-      const mockConfig = {
-        collections: [{ slug: 'media', endpoints: [], hooks: {} }],
-      }
-
-      const result = plugin(mockConfig as any)
-
-      const mediaCollection = result.collections?.find((c: any) => c.slug === 'media')
-      expect(mediaCollection?.hooks?.afterChange?.length).toBeGreaterThanOrEqual(1)
-    })
-
     it('should not modify unconfigured collections', () => {
       const plugin = cloudinaryStorage({
         cloudConfig: validCloudConfig,

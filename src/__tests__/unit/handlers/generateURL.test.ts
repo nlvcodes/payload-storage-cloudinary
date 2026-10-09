@@ -69,18 +69,4 @@ describe('generateURL', () => {
 
     expect(result).toBe('test.jpg')
   })
-
-  it('should return stored cloudinaryUrl directly', () => {
-    const generator = createURLGenerator(mockOptions)
-    const result = generator({
-      collection: mockCollection as any,
-      filename: 'test.jpg',
-      prefix: '',
-      data: {
-        cloudinaryUrl: 'https://res.cloudinary.com/test/image/upload/stored-url.jpg',
-      },
-    })
-
-    expect(result).toBe('https://res.cloudinary.com/test/image/upload/stored-url.jpg')
-  })
 })

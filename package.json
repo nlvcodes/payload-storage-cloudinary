@@ -1,6 +1,6 @@
 {
   "name": "payload-storage-cloudinary",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Cloudinary storage adapter for Payload CMS",
   "type": "module",
   "main": "./dist/index.js",
@@ -36,7 +36,8 @@
     "test:coverage": "vitest --coverage",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "smoke:live": "pnpm build && node scripts/live-smoke-test/index.mjs"
   },
   "keywords": [
     "payload",
@@ -53,12 +54,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nlvcodes/payload-storage-cloudinary.git"
+    "url": "git+https://github.com/nick-vogel/payload-storage-cloudinary.git"
   },
   "bugs": {
-    "url": "https://github.com/nlvcodes/payload-storage-cloudinary/issues"
+    "url": "https://github.com/nick-vogel/payload-storage-cloudinary/issues"
   },
-  "homepage": "https://github.com/nlvcodes/payload-storage-cloudinary#readme",
+  "homepage": "https://github.com/nick-vogel/payload-storage-cloudinary#readme",
   "peerDependencies": {
     "@payloadcms/ui": "^3.0.0",
     "payload": "^3.0.0",
@@ -69,6 +70,7 @@
     "cloudinary": "^2.0.0"
   },
   "devDependencies": {
+    "@payloadcms/db-sqlite": "3.44.0",
     "@payloadcms/ui": "^3.0.0",
     "@swc/cli": "^0.4.0",
     "@swc/core": "^1.3.96",

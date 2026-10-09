@@ -32,12 +32,13 @@ When you upload a file through Payload with this plugin, the following fields ar
   // Private file fields (if enabled)
   isPrivate: false,
   requiresSignedURL: false,
-  publicTransformationUrl: 'https://res.cloudinary.com/your-cloud/image/upload/l_text:...', // Watermarked/blurred public preview
-  previewUrl: 'https://res.cloudinary.com/your-cloud/image/upload/w_800,h_600,c_fill,l_text:...', // Combined presets + watermark/blur
+  previewUrl: 'https://res.cloudinary.com/your-cloud/image/authenticated/s--...--/w_800,h_600,c_fill/.../l_text:...', // Private file only: signed presets + watermark/blur
 }
 ```
 
 ## Understanding URL Fields
+
+> **Private files:** on a collection with `privateFiles`, these URLs are built when the document is read, from the reader's access, and none of them is stored. A private file never returns `originalUrl` or `cloudinaryUrl`, and a reader without access to the original gets `null` in `url`, `thumbnailURL` and `transformedUrl`. See [URL fields of a private file](../README.md#url-fields-of-a-private-file).
 
 ### When `preserveOriginal: true` (Recommended)
 - **`url`**: Always contains the original URL
@@ -246,7 +247,7 @@ function ArtDirectedImage({ doc }: { doc: any }) {
 }
 ```
 
-## Private Files and Public Previews
+## Private Files and Previews
 
 ### Basic Private File Handling
 
@@ -266,60 +267,33 @@ function PrivateImage({ doc }: { doc: any }) {
 }
 ```
 
-### Using Public Previews
+### Using Previews
+
+A reader who may only see the preview of a private file gets `previewUrl`, and `null` in `url`, `thumbnailURL` and `transformedUrl`. `previewUrl` carries the selected presets, then the watermark or blur, and is signed for an `authenticated` original. A file uploaded before 1.3.0 gets an unsigned preview until it is [migrated](./public-transformation-example.md#files-uploaded-before-130). See [Previews for Private Files](./public-transformation-example.md).
 
 ```tsx
 function ImageWithPreview({ doc }: { doc: any }) {
-  if (!doc.isPrivate) {
-    // Public file - use the best available URL
-    const imageUrl = doc.transformedUrl || doc.url
-    return <img src={imageUrl} alt={doc.alt} />
+  if (doc.transformedUrl || doc.url) {
+    // A public file, or a reader who may get the original
+    return <img src={doc.transformedUrl || doc.url} alt={doc.alt} />
   }
   
-  // Private file - show public preview if available
-  if (doc.publicTransformationUrl) {
+  // A reader who may only see the preview
+  if (doc.previewUrl) {
     return (
       <div>
-        <img src={doc.publicTransformationUrl} alt={`${doc.alt} - Preview`} />
-        <p>This is a preview. <a href="/login">Login</a> to see full quality.</p>
+        <img src={doc.previewUrl} alt={`${doc.alt} (preview)`} />
+        <p>This is a preview. <a href="/login">Log in</a> to see full quality.</p>
       </div>
     )
   }
   
-  // No public preview - require authentication
+  // No preview, so require authentication
   return <div>This image requires authentication</div>
 }
 ```
 
-### Combined Presets and Public Previews
-
-```tsx
-function AdvancedImageDisplay({ doc }: { doc: any }) {
-  if (!doc.isPrivate) {
-    // Public file - use transformed URL if available
-    return <img src={doc.transformedUrl || doc.url} alt={doc.alt} />
-  }
-  
-  // Private file with public preview
-  if (doc.previewUrl) {
-    // This URL combines transformation presets + watermark/blur
-    return (
-      <div>
-        <img src={doc.previewUrl} alt={`${doc.alt} - Preview`} />
-        <p>Preview with applied transformations and watermark</p>
-      </div>
-    )
-  }
-  
-  // Fallback to basic public preview
-  if (doc.publicTransformationUrl) {
-    return <img src={doc.publicTransformationUrl} alt={`${doc.alt} - Preview`} />
-  }
-  
-  // No preview available
-  return <div>Authentication required</div>
-}
-```
+Don't splice transformations into `previewUrl`. The signature covers them, so Cloudinary answers 401 to an edited URL.
 
 ## Transformation Parameters
 
@@ -377,7 +351,7 @@ function NextImage({ doc }: { doc: any }) {
 1. **Always use the appropriate URL**:
    - `transformedUrl` for images with user-selected presets
    - `originalUrl` for custom transformations
-   - `publicTransformationUrl` for public previews of private files
+   - `previewUrl` for previews of private files
 
 2. **Combine transformations wisely**:
    - Apply additional transformations to `transformedUrl` to build on user selections
@@ -385,7 +359,7 @@ function NextImage({ doc }: { doc: any }) {
 
 3. **Handle private files properly**:
    - Use the provided hooks for authenticated content
-   - Show public previews when available
+   - Show `previewUrl` when the reader has no `url`
    - Provide clear authentication prompts
 
 4. **Performance considerations**:

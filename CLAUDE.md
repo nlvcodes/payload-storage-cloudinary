@@ -91,7 +91,7 @@ The `dev/` folder contains a Next.js + Payload v3 test application configured to
 4. **Configuration Structure** (as of latest version):
    - `folder`: Can be string or `FolderConfig` object with `path`, `enableDynamic`, `fieldName`
    - `transformations`: Can be direct transformations or `TransformationConfig` with `default`, `presets`, `enablePresetSelection`, `preserveOriginal`
-   - `privateFiles`: Can be boolean (true = default 1hr signed URLs) or full `SignedURLConfig`
+   - `privateFiles`: Can be boolean (true turns on signed URLs) or full `SignedURLConfig`
    - `deleteFromCloudinary`: Boolean to control whether files are deleted from Cloudinary (default: true)
    - Backward compatibility maintained through `normalizeConfig.ts`
 
@@ -103,7 +103,7 @@ The `dev/` folder contains a Next.js + Payload v3 test application configured to
 
 6. **Private Files Implementation**:
    - `privateFiles` configuration automatically enables signed URLs
-   - When `privateFiles: true`, uses default 1-hour expiry
+   - Signed URLs don't expire. `expiresIn` and `authToken` are deprecated: accepted, ignored, and warned about once at startup
    - Can pass full `SignedURLConfig` for custom settings
    - Legacy `signedURLs` field is mapped to `privateFiles` for backward compatibility
 
@@ -169,11 +169,11 @@ cloudinaryStorage({
         preserveOriginal: true,
       },
       // Simplified private files configuration
-      privateFiles: true,  // Automatically enables signed URLs with 1hr expiry
+      privateFiles: true,  // Turns on signed URLs. They don't expire.
       // Or with custom config:
       // privateFiles: {
       //   enabled: true,
-      //   expiresIn: 7200, // 2 hours
+      //   customAuthCheck: (req, doc) => Boolean(req.user),
       // },
       
       // Control Cloudinary deletion
@@ -220,7 +220,7 @@ cloudinaryStorage({
 
 4. **Private Files Simplification**:
    - Combined `privateFiles` and `signedURLs` into single `privateFiles` option
-   - `privateFiles: true` auto-enables signed URLs with 1hr default
+   - `privateFiles: true` turns on signed URLs, which don't expire
    - Can pass full config object for custom settings
 
 5. **Optional Cloudinary Deletion**:
@@ -240,8 +240,7 @@ cloudinaryStorage({
    - Added clear documentation and examples
 
 2. **Private Files Implementation**:
-   - When `privateFiles` is enabled, Cloudinary creates authenticated URLs during upload
-   - These URLs already include authentication (`/authenticated/s--...--/`)
-   - The plugin returns these pre-authenticated URLs instead of generating new tokens
+   - Private originals upload as `authenticated` assets. Every URL of a private file is built when the document is read, signed (`/authenticated/s--...--/`), after the access rule decides
+   - Nothing deliverable is stored: a private upload stores no delivery URL, and reads never return the stored `cloudinaryUrl` or `originalUrl`
    - Client-side code must import from `'payload-storage-cloudinary/client'` to avoid server dependencies
    - React hooks require passing the React instance in Next.js environments

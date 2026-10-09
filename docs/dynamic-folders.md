@@ -63,10 +63,13 @@ This adds a "Cloudinary Folder" text field to the upload form where users can sp
 ### Smart Asset Moving
 
 When you change the folder path for an existing file, the plugin:
-1. Uses Cloudinary's rename API to move the asset
-2. Preserves the same public ID and version
+1. Uses Cloudinary's rename API to move the asset, from its stored delivery type, so private (`authenticated`) files move too
+2. Keeps the file name part of the public ID, and the version
 3. Updates the folder location without re-uploading
-4. Maintains all existing URLs and transformations
+4. Maintains all transformations. The asset gets a new public ID, so URLs to the old location stop working
+5. Stores no delivery URL for a private file: its URLs are built when the document is read. A public file's stored URLs point at the new location
+
+The move happens before the save, except when the same save makes a private file public: then one rename after the save moves and publishes the file. If the save fails, the plugin moves the asset back on a REST request. See [Handling Updates](./handling-updates.md#when-a-save-fails).
 
 ### Custom Field Implementation
 
@@ -213,9 +216,9 @@ content/
 - The plugin handles folder creation seamlessly
 
 ### Asset Moving
-- Uses Cloudinary's `rename` API to move assets between folders
-- Preserves the same public ID and version
-- All existing URLs continue to work
+- Uses Cloudinary's `rename` API to move assets between folders, with the asset's stored delivery type
+- Keeps the file name part of the public ID, and the version
+- URLs to the old location stop working, and the plugin stores the new public ID. A private file stores no delivery URL
 - Transformation URLs are automatically updated
 
 ### Validation

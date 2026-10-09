@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-10-09
+
+Fixes [GHSA-gm3h-g6v2-2cpf](https://github.com/nick-vogel/payload-storage-cloudinary/security/advisories/GHSA-gm3h-g6v2-2cpf): private files exposed through signed-URL endpoints, stored URLs and public transformations (1.0.0 to 1.2.1). The upgrade has breaking changes and needs a migration step. The [1.3.0 release notes](https://github.com/nick-vogel/payload-storage-cloudinary/releases/tag/v1.3.0) hold the full list, the upgrade steps, and workarounds for sites that can't upgrade yet.
+
+### Security
+- One access rule decides who gets the original, the preview, or nothing. The signed URL endpoints, every read, and the server helpers apply it, on top of your collection's `read` access
+- The rule decides on the stored document in every configured locale, whatever the read selected
+- Private originals upload to Cloudinary as `authenticated`, also on `publicTransformation` collections, and no public copy is uploaded
+- Delivery URLs are built at read time and no longer stored
+- The signed URL endpoints sign only allowed transformations, and so do `getSignedURL`, `getSignedURLs` and `getServerImageURL` unless trusted server code passes `overrideTransformationAllowlist: true`
+- Fields the plugin writes are read-only to API writes
+- A privacy or folder change moves the asset on Cloudinary and keeps it in step with the document
+
+### Added
+- `migratePrivateAssets` and `MigrationStoppedError`, to move private files uploaded before 1.3.0
+- `isAccessAllowedByID({ req, collection, id })`
+- `cloudinaryType` field (needs a Payload migration on Postgres and SQLite)
+- `changeDeliveryType`, and a `deliveryType` option on `generateSignedURL` and `generateDownloadURL`
+- `overrideTransformationAllowlist` on the server helpers
+- `SECURITY.md`
+
+### Changed
+- **BREAKING**: the server helpers enforce access by default. Pass `req`, or `overrideAccess: true` for trusted jobs
+- **BREAKING**: `customAuthCheck` receives the stored document, once per configured locale
+- **BREAKING**: the endpoints no longer return `expiresIn` or `expiresAt`, and the client helpers throw the endpoint's error text
+- **BREAKING**: `CloudinaryDocumentData.width` and `height` are `number | null`
+- **BREAKING**: the signed URL endpoints and three server helpers answer 400 for a transformation outside the allowlist
+- **BREAKING**: the batch endpoint takes at most 100 IDs, and returns a result with an `error` for each refused ID
+- **BREAKING**: `isAccessAllowed` fails closed. With a bare `SignedURLConfig` or no config and no `customAuthCheck`, it returns `false`
+- **BREAKING**: `generateSignedURL` and `generateDownloadURL` build `authenticated` URLs by default
+- **BREAKING**: a preview with no `watermark` settings carries the text `WATERMARK`
+- **BREAKING**: a Local API read without `req` reads as an anonymous visitor, so it gets `null` URLs on a collection with `customAuthCheck` or `publicTransformation`
+- **BREAKING**: `url` carries the collection's default transformations
+- **BREAKING**: `getServerImageURL`, `getPrivateImageURL` and `getPremiumImageURL` no longer return the document's `url` for a public file, and can return `null` for one
+- Every Cloudinary collection sets `forceSelect` to the plugin's asset fields
+- The package's repository, bugs and homepage links point at `nick-vogel/payload-storage-cloudinary`
+
+### Deprecated
+- `isAccessAllowed(req, doc, config)`, in favor of `isAccessAllowedByID`
+- `authToken` and `expiresIn` in `privateFiles` (ignored; signed URLs don't expire)
+- `applyTransformationsToUrl`, `pluginOptions` on the server helpers, `publicTransformationUrl`, and the second argument of `getPublicPreviewURL`
+
+### Fixed
+- `transformations` objects without a `default` key no longer drop `presets`, `enablePresetSelection`, `preserveOriginal` and `publicTransformation`
+- Deleting a private document deletes its `authenticated` asset
+- Moving a private file to another dynamic folder works
+- A replacement file on a saved document uploads to Cloudinary. Before, the upload was skipped after the old asset was deleted
+
 ## [1.0.5] - 2025-01-06
 
 ### Added

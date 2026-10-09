@@ -1,130 +1,119 @@
-// Example configuration for watermarked public previews of private files
+// Example configurations for watermarked or blurred previews of private files.
+// See docs/public-transformation-example.md.
+//
+// A private file uploads as an `authenticated` Cloudinary asset. A reader who passes
+// customAuthCheck gets the original. Any other reader who may read the document gets only
+// `previewUrl`: a signed URL with the watermark or blur, which breaks if edited.
 
 import { cloudinaryStorage } from '../src/index'
 
-// Example 1: Simple quality reduction and size limit
-export const simplePreviewConfig = {
-  cloudinaryStorage({
-    cloudConfig: {
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-      api_key: process.env.CLOUDINARY_API_KEY!,
-      api_secret: process.env.CLOUDINARY_API_SECRET!,
-    },
-    collections: {
-      media: {
-        privateFiles: true,
-        transformations: {
-          publicTransformation: {
-            enabled: true,
-            transformation: {
-              quality: 30,
-              width: 400,
-              height: 400,
-              crop: 'limit',
-              effect: 'blur:100', // Add blur effect
-            },
-          },
-        },
-      },
-    },
-  })
+const cloudConfig = {
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+  api_key: process.env.CLOUDINARY_API_KEY!,
+  api_secret: process.env.CLOUDINARY_API_SECRET!,
 }
 
-// Example 2: Text overlay watermark (requires proper Cloudinary syntax)
-export const textWatermarkConfig = {
-  cloudinaryStorage({
-    cloudConfig: {
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-      api_key: process.env.CLOUDINARY_API_KEY!,
-      api_secret: process.env.CLOUDINARY_API_SECRET!,
-    },
-    collections: {
-      media: {
-        privateFiles: true,
-        transformations: {
-          publicTransformation: {
-            enabled: true,
-            transformation: [
-              {
-                width: 800,
-                height: 800,
-                crop: 'limit',
-                quality: 60,
-              },
-              {
-                overlay: {
-                  font_family: 'Arial',
-                  font_size: 60,
-                  font_weight: 'bold',
-                  text: 'PREVIEW',
-                },
-                color: 'rgb:ffffff80', // White with 50% opacity
-                gravity: 'center',
-                angle: -45,
-              },
-            ],
-          },
-        },
+// Example 1: Tiled text watermark. Logged-in users get the original, visitors the preview.
+export const textWatermarkPlugin = cloudinaryStorage({
+  cloudConfig,
+  collections: {
+    media: {
+      privateFiles: {
+        enabled: true,
+        customAuthCheck: (req) => Boolean(req.user),
       },
-    },
-  })
-}
-
-// Example 3: Image overlay watermark
-export const imageWatermarkConfig = {
-  cloudinaryStorage({
-    cloudConfig: {
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-      api_key: process.env.CLOUDINARY_API_KEY!,
-      api_secret: process.env.CLOUDINARY_API_SECRET!,
-    },
-    collections: {
-      media: {
-        privateFiles: true,
-        transformations: {
-          publicTransformation: {
-            enabled: true,
-            transformation: {
-              overlay: 'watermark', // You need to upload an image with public_id "watermark" first
-              gravity: 'south_east',
-              x: 10,
-              y: 10,
+      transformations: {
+        preserveOriginal: true,
+        publicTransformation: {
+          enabled: true,
+          watermark: {
+            defaultText: 'PREVIEW',
+            style: {
+              fontFamily: 'Arial',
+              fontSize: 60,
+              fontWeight: 'bold',
+              color: 'rgb:ffffff',
               opacity: 50,
-              width: 100,
-              quality: 'auto',
-              fetch_format: 'auto',
+              angle: -45,
             },
           },
         },
       },
     },
-  })
-}
+  },
+})
 
-// Example 4: Pixelate effect for preview
-export const pixelatePreviewConfig = {
-  cloudinaryStorage({
-    cloudConfig: {
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-      api_key: process.env.CLOUDINARY_API_KEY!,
-      api_secret: process.env.CLOUDINARY_API_SECRET!,
-    },
-    collections: {
-      media: {
-        privateFiles: true,
-        transformations: {
-          publicTransformation: {
-            enabled: true,
-            transformation: {
-              effect: 'pixelate:20',
-              width: 600,
-              height: 600,
-              crop: 'limit',
-              quality: 'auto',
-            },
+// Example 2: Blurred preview. The editor picks "Blur" as the document's transformation type.
+export const blurPreviewPlugin = cloudinaryStorage({
+  cloudConfig,
+  collections: {
+    media: {
+      privateFiles: {
+        enabled: true,
+        customAuthCheck: (req) => Boolean(req.user),
+      },
+      transformations: {
+        preserveOriginal: true,
+        publicTransformation: {
+          enabled: true,
+          blur: {
+            effect: 'blur:1500',
+            quality: 30,
+            width: 400,
+            height: 400,
           },
         },
       },
     },
-  })
-}
+  },
+})
+
+// Example 3: Image watermark. Upload the logo to Cloudinary first, as the public ID below.
+// One corner logo can be cropped out of a download, so prefer Example 1 for content you sell.
+export const imageWatermarkPlugin = cloudinaryStorage({
+  cloudConfig,
+  collections: {
+    media: {
+      privateFiles: {
+        enabled: true,
+        customAuthCheck: (req) => Boolean(req.user),
+      },
+      transformations: {
+        preserveOriginal: true,
+        publicTransformation: {
+          enabled: true,
+          watermark: {
+            imageId: 'brand/watermark',
+            style: { opacity: 50, position: 'south_east' },
+          },
+        },
+      },
+    },
+  },
+})
+
+// Example 4: Presets under the watermark. The preview applies the selected presets, then the
+// watermark. No customAuthCheck, so nobody gets the original through the plugin.
+export const presetPreviewPlugin = cloudinaryStorage({
+  cloudConfig,
+  collections: {
+    media: {
+      privateFiles: true,
+      transformations: {
+        preserveOriginal: true,
+        enablePresetSelection: true,
+        presets: [
+          {
+            name: 'card',
+            label: 'Card View',
+            transformations: { width: 400, height: 400, crop: 'fill', gravity: 'auto' },
+          },
+        ],
+        publicTransformation: {
+          enabled: true,
+          watermark: { defaultText: 'SAMPLE' },
+        },
+      },
+    },
+  },
+})

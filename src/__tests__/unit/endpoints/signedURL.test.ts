@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { Forbidden, NotFound } from 'payload'
 import { createSignedURLEndpoint, createBatchSignedURLEndpoint } from '../../../endpoints/signedURL'
 import { mockPayloadRequest } from '../../setup'
 import type { CloudinaryStorageOptions } from '../../../types'
@@ -49,11 +50,36 @@ describe('signedURL endpoints', () => {
 
       expect(response.status).toBe(404)
       expect(data.error).toBe('Document not found')
-      expect(req.payload.findByID).toHaveBeenCalledWith({
-        collection: 'media',
-        id: '123',
-        req,
+    })
+
+    it('should answer 404 when Payload throws NotFound', async () => {
+      const req = mockPayloadRequest({
+        routeParams: { id: '123' },
       })
+
+      // A document outside a query-based read access is NotFound to that caller
+      vi.mocked(req.payload.findByID).mockRejectedValue(new NotFound())
+
+      const response = await endpoint.handler(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(404)
+      expect(data.error).toBe('Document not found')
+      expect(data.url).toBeUndefined()
+    })
+
+    it('should answer 500 for an error that is not an access decision', async () => {
+      const req = mockPayloadRequest({
+        routeParams: { id: '123' },
+      })
+
+      // A message that mentions authorization is not a status: only Payload's error status maps
+      vi.mocked(req.payload.findByID).mockRejectedValue(new Error('Unauthorized'))
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const response = await endpoint.handler(req)
+
+      expect(response.status).toBe(500)
     })
 
     it('should return error when file does not require signed URL', async () => {
@@ -100,9 +126,8 @@ describe('signedURL endpoints', () => {
 
       expect(response.status).toBe(200)
       expect(data).toHaveProperty('url')
-      expect(data).toHaveProperty('expiresIn')
-      expect(data).toHaveProperty('expiresAt')
-      expect(data.expiresIn).toBe(3600) // Default 1 hour
+      expect(data).not.toHaveProperty('expiresIn')
+      expect(data).not.toHaveProperty('expiresAt')
     })
 
     it('should deny access for unauthorized user (Payload rejects findByID)', async () => {
@@ -111,16 +136,15 @@ describe('signedURL endpoints', () => {
         user: null, // No user
       })
 
-      // Payload's access control rejects the findByID call
-      vi.mocked(req.payload.findByID).mockRejectedValue(
-        new Error('Unauthorized')
-      )
+      // Payload's read access rejects the findByID call with Forbidden
+      vi.mocked(req.payload.findByID).mockRejectedValue(new Forbidden())
 
       const response = await endpoint.handler(req)
       const data = await response.json()
 
       expect(response.status).toBe(403)
-      expect(data.error).toBe('Authentication required for private files')
+      expect(data.error).toBe('Access denied')
+      expect(data.url).toBeUndefined()
     })
 
     it('should generate download URL when requested', async () => {
@@ -316,7 +340,7 @@ describe('signedURL endpoints', () => {
       expect(response.status).toBe(200)
       expect(data.results).toHaveLength(2)
       expect(data.results[0]).toHaveProperty('url')
-      expect(data.results[0]).toHaveProperty('expiresIn')
+      expect(data.results[0]).not.toHaveProperty('expiresIn')
       expect(data.results[1]).toEqual({
         id: '456',
         url: 'https://public-url.com/image.jpg',
@@ -381,8 +405,27 @@ describe('signedURL endpoints', () => {
       expect(data.results[0]).toHaveProperty('url')
       expect(data.results[1]).toEqual({
         id: '456',
+        status: 403,
         error: 'Access denied',
       })
+    })
+
+    it('should give each requested ID the status Payload chose when find is refused', async () => {
+      const req = mockPayloadRequest({
+        json: vi.fn().mockResolvedValue({ ids: ['123', '456'] }),
+        user: null,
+      })
+
+      vi.mocked(req.payload.find).mockRejectedValue(new Forbidden())
+
+      const response = await endpoint.handler(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data.results).toEqual([
+        { id: '123', status: 403, error: 'Access denied' },
+        { id: '456', status: 403, error: 'Access denied' },
+      ])
     })
   })
 })

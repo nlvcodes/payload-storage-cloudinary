@@ -295,8 +295,15 @@ describe('handleUpload', () => {
       expect(result.cloudinaryPublicId).toBe('existing-id')
     })
 
-    it('should return data on early return when same file is re-sent', async () => {
+    it('should upload a replacement file when the document has a publicId', async () => {
+      const mockResponse = mockCloudinaryResponse({ public_id: 'replacement-id', version: 2 })
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation((options, callback) => {
+        setTimeout(() => callback(null, mockResponse), 0)
+        return { end: vi.fn() } as any
+      })
+
       const handler = createUploadHandler(mockOptions)
+      // The storage plugin names the incoming file after the document, so the names match
       const file = mockFile({ filename: 'test.jpg' })
       const data = {
         cloudinaryPublicId: 'existing-id',
@@ -312,10 +319,43 @@ describe('handleUpload', () => {
         data
       })
 
-      // Should return data without re-uploading
-      expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled()
-      expect(result).toBeDefined()
-      expect(result.cloudinaryPublicId).toBe('existing-id')
+      expect(cloudinary.uploader.upload_stream).toHaveBeenCalledTimes(1)
+      expect(result.cloudinaryPublicId).toBe('replacement-id')
+      expect(result.cloudinaryVersion).toBe(2)
+      expect(result.cloudinaryUrl).toBe(mockResponse.secure_url)
+    })
+
+    it('should clear the old dimensions when the replacement file has none', async () => {
+      const mockResponse = mockCloudinaryResponse({
+        public_id: 'replacement-id',
+        resource_type: 'raw',
+        format: 'zip',
+        width: undefined,
+        height: undefined,
+      })
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation((options, callback) => {
+        setTimeout(() => callback(null, mockResponse), 0)
+        return { end: vi.fn() } as any
+      })
+
+      const handler = createUploadHandler(mockOptions)
+      const file = mockFile({ filename: 'archive.zip', mimeType: 'application/zip' })
+      const data = {
+        cloudinaryPublicId: 'existing-id',
+        filename: 'archive.zip',
+        width: 800,
+        height: 600,
+      }
+
+      const result = await handler({
+        collection: mockCollection as any,
+        file,
+        data
+      })
+
+      expect(result.cloudinaryPublicId).toBe('replacement-id')
+      expect(result.width).toBeNull()
+      expect(result.height).toBeNull()
     })
   })
 

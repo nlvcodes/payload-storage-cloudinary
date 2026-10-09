@@ -77,22 +77,41 @@ export const mockCloudinaryResponse = (overrides = {}) => ({
   ...overrides,
 })
 
-export const mockPayloadRequest = (overrides = {}) => ({
-  payload: {
-    findByID: vi.fn(),
-    find: vi.fn(),
-  },
-  user: {
-    id: 'user-123',
-    email: 'test@example.com',
-    role: 'user',
-  },
-  headers: {},
-  query: {},
-  routeParams: {},
-  json: vi.fn(() => Promise.resolve({})),
-  ...overrides,
-})
+export const mockPayloadRequest = (overrides = {}) => {
+  const findByID = vi.fn()
+  const find = vi.fn()
+
+  // The stored-document read through the database adapter. It returns the documents the Local
+  // API mocks returned, as if the reader's lookup saw every stored field.
+  const storedFind = vi.fn(async ({ where }: any) => {
+    const ids = new Set((where?.id?.in ?? []).map(String))
+    const looked = await Promise.all(
+      [...findByID.mock.results, ...find.mock.results]
+        .filter((result) => result.type === 'return')
+        .map((result) => Promise.resolve(result.value).catch(() => undefined)),
+    )
+    const docs = looked.flatMap((value: any) => value?.docs ?? (value ? [value] : []))
+    return { docs: docs.filter((doc: any) => ids.has(String(doc.id))) }
+  })
+
+  // The stored read runs Payload's field afterRead traversal on each row. A collection with no
+  // fields and no localization leaves the row as the mocks returned it.
+  const collections = new Proxy({}, { get: () => ({ config: { fields: [] } }) })
+
+  return {
+    payload: { findByID, find, db: { find: storedFind }, collections, config: {} },
+    user: {
+      id: 'user-123',
+      email: 'test@example.com',
+      role: 'user',
+    },
+    headers: {},
+    query: {},
+    routeParams: {},
+    json: vi.fn(() => Promise.resolve({})),
+    ...overrides,
+  }
+}
 
 // Reset mocks before each test
 beforeEach(() => {

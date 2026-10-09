@@ -1,12 +1,12 @@
-# Public Previews for Private Files
+# Previews for Private Files
 
-This feature allows you to create public preview URLs with watermarks or blur effects for private files, while keeping the original files protected through Payload's access control.
+This feature shows a watermarked or blurred preview of a private file to readers who may not get the original, for example visitors who haven't paid or signed up. The original stays an `authenticated` Cloudinary asset, and only the readers you allow get it.
 
 ## Overview
 
-The public preview feature provides two types of public URLs for private files:
-- **Basic Public Preview**: Watermarked or blurred version available to everyone
-- **Combined Preview**: Applies transformation presets AND watermark/blur effects
+- A private file always uploads to Cloudinary as an `authenticated` asset, so nothing reaches it without a signed URL.
+- The preview (`previewUrl`) is a signed URL of that asset with the watermark or blur applied. The signature covers the whole transformation, so editing the URL to drop the watermark or blur gets a 401 from Cloudinary. A private file uploaded before 1.3.0 stays a public `upload` asset until you run `migratePrivateAssets`, and its preview is unsigned until then. See [Files Uploaded Before 1.3.0](#files-uploaded-before-130).
+- The plugin builds every URL when the document is read, after Payload has run the collection's `read` access, so each reader gets only the URLs they may have.
 
 ## Use Cases
 
@@ -15,6 +15,25 @@ Perfect for scenarios where you want to:
 - Display blurred previews of private photos
 - Allow public browsing with authentication-gated full access
 - Create teasers for paid content
+
+## Who Gets What
+
+On a collection with `publicTransformation` enabled:
+
+| Reader | `url`, `thumbnailURL`, `transformedUrl` | `previewUrl` |
+|---|---|---|
+| The collection's `read` access passes and `customAuthCheck` passes | Signed URLs of the original | The signed preview |
+| The collection's `read` access passes but `customAuthCheck` refuses, or there is no `customAuthCheck` | `null` | The signed preview |
+| The collection's `read` access refuses | No document (403 or 404) | No document |
+
+`transformedUrl` is set only when `preserveOriginal` and `enablePresetSelection` are both on and there are presets or default transformations to apply. Otherwise it is `null`.
+
+- **With no `customAuthCheck`, nobody gets the original through the plugin.** Add a `customAuthCheck` that lets through the readers who should get it.
+- A document with its preview turned off gives a preview-only reader `null` in every URL field.
+- A preview-only reader gets no thumbnail, since the thumbnail isn't watermarked.
+- The signed URL endpoints answer 403 to a preview-only reader.
+- Signed URLs don't expire. The preview is meant to be public, so that is fine for `previewUrl`. Treat the original's URLs as bearer links.
+- A file uploaded before 1.3.0 and not yet migrated gets unsigned URLs. See [Files Uploaded Before 1.3.0](#files-uploaded-before-130).
 
 ## Configuration
 
@@ -29,7 +48,11 @@ cloudinaryStorage({
   },
   collections: {
     media: {
-      privateFiles: true, // Enable per-file privacy control
+      privateFiles: {
+        enabled: true,
+        // Who gets the original. Everyone else who can read the document gets the preview.
+        customAuthCheck: (req, doc) => Boolean(req.user),
+      },
       transformations: {
         preserveOriginal: true, // Recommended for flexibility
         publicTransformation: {
@@ -55,20 +78,28 @@ cloudinaryStorage({
 })
 ```
 
+Your collection's `read` access must let preview readers read the document, for example `read: () => true` on a collection whose previews every visitor may see. The plugin then decides which URLs each reader gets.
+
 ### Advanced Configuration with Presets
 
 ```typescript
 cloudinaryStorage({
   collections: {
     media: {
-      privateFiles: true,
+      privateFiles: {
+        enabled: true,
+        customAuthCheck: async (req, doc) => {
+          // For example, members with an active subscription
+          return Boolean(req.user?.subscriptionActive)
+        },
+      },
       transformations: {
         preserveOriginal: true,
         presets: [
           {
             name: 'card',
             label: 'Card View',
-            transformation: {
+            transformations: {
               width: 400,
               height: 400,
               crop: 'fill',
@@ -78,7 +109,7 @@ cloudinaryStorage({
           {
             name: 'hero',
             label: 'Hero Image',
-            transformation: {
+            transformations: {
               width: 1200,
               height: 600,
               crop: 'fill',
@@ -114,110 +145,77 @@ cloudinaryStorage({
 
 ### Upload Process
 
-1. **Upload File**: User uploads a file to the collection
-2. **Privacy Control**: User can check/uncheck "Private File" checkbox
-3. **Preset Selection**: User can select transformation presets (if enabled)
-4. **Public Preview**: User can enable public preview and choose watermark or blur
+1. **Upload File**: An editor uploads a file to the collection. A private file uploads as an `authenticated` asset.
+2. **Privacy Control**: The editor can check or uncheck the "Private File" checkbox.
+3. **Preset Selection**: The editor can select transformation presets (if enabled).
+4. **Preview**: The editor checks "Enable Preview" and chooses watermark or blur. For a watermark, they can set the text per document.
 
-### URL Generation
+Nothing else is uploaded. The plugin doesn't create a separate preview asset: the preview is a signed transformation of the original, built when the document is read.
 
-The plugin generates multiple URL fields:
+### URL Fields
 
 ```typescript
 {
-  // Standard URLs
-  url: '...', // Original URL (when preserveOriginal: true)
-  originalUrl: '...', // Always the untransformed image
-  transformedUrl: '...', // With selected presets applied
-  
-  // Public preview URLs
-  publicTransformationUrl: '...', // Basic watermark/blur preview
-  previewUrl: '...', // Combined presets + watermark/blur
-  
-  // Admin thumbnail
-  thumbnailURL: '...', // 150x150 for admin UI
+  // Signed URLs of the original, or null for a reader without the original
+  url: '...', // The original, with the default transformations
+  transformedUrl: '...', // With the selected presets applied
+  thumbnailURL: '...', // 150x150 for the admin UI
+
+  // The signed preview, for every reader who may read the document
+  previewUrl: '...', // Default transformations and selected presets, then the watermark or blur
 }
 ```
 
-### Preview Types
+A private file never returns `originalUrl`, and no response returns `cloudinaryUrl`.
 
-1. **Basic Public Preview** (`publicTransformationUrl`):
-   - Applies only the watermark or blur effect
-   - Available even without transformation presets
-   - Good for simple previews
+### The Preview
 
-2. **Combined Preview** (`previewUrl`):
-   - Applies selected transformation presets PLUS watermark/blur
-   - Only available when transformation presets are selected
-   - Best for showcasing how transformations look with watermarks
+`previewUrl` applies, in order:
+
+1. The collection's default transformations
+2. Each selected preset, in the order selected
+3. The watermark or blur
+
+It doesn't need a selected preset. With none selected, it is the watermark or blur alone.
+
+The preview always carries a watermark or blur. If you turn on `publicTransformation` without `watermark` settings, the watermark uses the default text `WATERMARK`.
 
 ## Admin Interface
 
 The admin interface provides:
 
-1. **Private File Checkbox**: Control file privacy per upload
+1. **Private File**: Controls privacy per upload
 2. **Transformation Presets**: Multi-select field for presets (if enabled)
-3. **Public Preview Toggle**: Enable/disable public previews
-4. **Transformation Type**: Choose between watermark and blur
+3. **Enable Preview**: Turns the preview on or off for the document
+4. **Transformation Type**: Watermark or blur
+5. **Watermark Text**: The watermark text for this document
+6. **Preview URL**: The signed preview, read-only
 
 ## Frontend Implementation
+
+Fetch the document as the reader, so the URLs match what that reader may have. With the Local API, pass `req`. A Local API call without `req` reads as an anonymous visitor.
 
 ### Basic Usage
 
 ```tsx
 function ImageWithPreview({ doc }: { doc: any }) {
-  if (!doc.isPrivate) {
-    // Public file - use the best available URL
-    const imageUrl = doc.transformedUrl || doc.url
-    return <img src={imageUrl} alt={doc.alt} />
+  // A reader who may get the original
+  if (doc.url) {
+    return <img src={doc.url} alt={doc.alt} />
   }
-  
-  // Private file - show public preview if available
-  if (doc.publicTransformationUrl) {
-    return (
-      <div>
-        <img src={doc.publicTransformationUrl} alt={`${doc.alt} - Preview`} />
-        <p>This is a preview. <a href="/login">Login</a> to see full quality.</p>
-      </div>
-    )
-  }
-  
-  // No public preview - require authentication
-  return <div>This image requires authentication</div>
-}
-```
 
-### Advanced Usage with Combined Previews
-
-```tsx
-function AdvancedImageDisplay({ doc }: { doc: any }) {
-  if (!doc.isPrivate) {
-    // Public file - use transformed URL if available
-    return <img src={doc.transformedUrl || doc.url} alt={doc.alt} />
-  }
-  
-  // Private file with combined preview (presets + watermark/blur)
+  // A reader who may only see the preview
   if (doc.previewUrl) {
     return (
       <div>
-        <img src={doc.previewUrl} alt={`${doc.alt} - Preview`} />
-        <p>Preview with applied transformations and watermark</p>
+        <img src={doc.previewUrl} alt={`${doc.alt} (preview)`} />
+        <p>This is a preview. <a href="/login">Log in</a> to see full quality.</p>
       </div>
     )
   }
-  
-  // Fallback to basic public preview
-  if (doc.publicTransformationUrl) {
-    return (
-      <div>
-        <img src={doc.publicTransformationUrl} alt={`${doc.alt} - Preview`} />
-        <p>This is a preview. Login to see full quality.</p>
-      </div>
-    )
-  }
-  
-  // No preview available
-  return <div>Authentication required</div>
+
+  // No preview for this document
+  return <div>This image requires authentication</div>
 }
 ```
 
@@ -227,33 +225,21 @@ function AdvancedImageDisplay({ doc }: { doc: any }) {
 function GalleryWithPreviews({ images }: { images: any[] }) {
   return (
     <div className="grid grid-cols-3 gap-4">
-      {images.map(image => (
+      {images.map((image) => (
         <div key={image.id} className="relative">
-          {!image.isPrivate ? (
-            // Public image
-            <img 
-              src={image.transformedUrl || image.url} 
+          {image.transformedUrl || image.url ? (
+            // The reader may get the original
+            <img
+              src={image.transformedUrl || image.url}
               alt={image.alt}
               className="w-full h-auto"
             />
           ) : image.previewUrl ? (
-            // Private with combined preview
+            // Preview only
             <div>
-              <img 
-                src={image.previewUrl} 
-                alt={`${image.alt} - Preview`}
-                className="w-full h-auto"
-              />
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
-                <span className="text-white text-sm">Preview</span>
-              </div>
-            </div>
-          ) : image.publicTransformationUrl ? (
-            // Private with basic preview
-            <div>
-              <img 
-                src={image.publicTransformationUrl} 
-                alt={`${image.alt} - Preview`}
+              <img
+                src={image.previewUrl}
+                alt={`${image.alt} (preview)`}
                 className="w-full h-auto"
               />
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
@@ -273,31 +259,44 @@ function GalleryWithPreviews({ images }: { images: any[] }) {
 }
 ```
 
+Don't splice transformations into `previewUrl` or any other signed URL. The signature covers the transformation, so Cloudinary answers 401 to an edited URL. Add a preset instead.
+
 ## Watermark Configuration
 
 ### Text Watermarks
 
 ```typescript
 watermark: {
-  defaultText: 'PREVIEW',
+  defaultText: 'PREVIEW', // Used when the document sets no text. Without it, 'WATERMARK'.
+  textFieldName: 'watermarkText', // The per-document text field
   style: {
     fontFamily: 'Arial', // or 'Times', 'Helvetica', etc.
     fontSize: 50,
+    fontWeight: 'bold',
+    letterSpacing: 15,
     color: 'rgb:808080', // Gray color
     opacity: 50, // 50% transparency
     angle: -45, // Diagonal angle
+    position: 'center', // Cloudinary gravity
   },
 }
 ```
 
-### Dynamic Watermarks
+The text watermark is tiled across the image.
 
-Users can customize watermark text through a field in the admin:
+### Image Watermarks
 
 ```typescript
-// The plugin automatically adds a watermark text field
-// Users can enter custom text like "SAMPLE", "DRAFT", "PREVIEW"
+watermark: {
+  imageId: 'brand/watermark', // Public ID of an image you uploaded to Cloudinary
+  style: {
+    opacity: 50,
+    position: 'south_east',
+  },
+}
 ```
+
+An image watermark is one logo in a corner, which can be cropped out of a downloaded preview. Prefer the tiled text watermark or blur for content you sell.
 
 ## Blur Configuration
 
@@ -305,23 +304,25 @@ Users can customize watermark text through a field in the admin:
 blur: {
   effect: 'blur:2000', // Heavy blur (0-2000)
   quality: 30, // Lower quality for previews
+  width: 600, // The preview is scaled down to fit 600x600 by default
+  height: 600,
 }
 ```
 
-## Important Notes
+## Files Uploaded Before 1.3.0
 
-1. **Upload Method**: Files are uploaded as regular (non-authenticated) resources to Cloudinary when public previews are enabled
-2. **Access Control**: Privacy is enforced through Payload's access control, not Cloudinary authentication
-3. **URL Generation**: All transformations are applied via URL parameters, not during upload
-4. **Re-upload Prevention**: Changing transformation settings won't trigger new uploads
+- Before 1.3.0, a `publicTransformation` collection uploaded its private originals as public `upload` assets. Until you migrate them with `migratePrivateAssets`, which moves them to `authenticated`, their originals stay public and their preview is unsigned, so the watermark or blur can be stripped from it. Their URLs keep working in the meantime.
+- Before 1.3.0, turning on a document's preview also uploaded a separate public copy, named `<public ID>_public_watermark` or `<public ID>_public_blur`. The plugin no longer creates these copies. `migratePrivateAssets` lists the ones left in your Cloudinary account, and deleting them is up to you.
+- `publicTransformationUrl` is deprecated. New uploads never set it, and a reader without the original reads it as `null`. Render `previewUrl` instead.
 
 ## Best Practices
 
-1. **Use `preserveOriginal: true`** for maximum flexibility
-2. **Combine with transformation presets** for sophisticated previews
-3. **Test watermark visibility** on different image backgrounds
-4. **Consider blur intensity** based on your content
-5. **Provide clear authentication prompts** for full access
+1. **Set `customAuthCheck`** for the readers who should get the original. Without it, nobody gets it.
+2. **Use `preserveOriginal: true`** for maximum flexibility
+3. **Combine with transformation presets** for sophisticated previews
+4. **Test watermark visibility** on different image backgrounds
+5. **Consider blur intensity** based on your content
+6. **Provide clear authentication prompts** for full access
 
 ## Troubleshooting
 
@@ -336,12 +337,18 @@ blur: {
 - Lower quality for more aggressive blur
 - Combine with other effects
 
-### Issue: No Public Preview Generated
-- Check that `publicTransformation.enabled: true`
-- Verify file is marked as private
-- Ensure user enabled public preview in admin
+### Issue: No Preview URL
+- Check that `publicTransformation.enabled: true` and `privateFiles` are both set
+- Verify the file is marked as private
+- Ensure the editor checked "Enable Preview" on the document
+- Check that the reader may read the document under the collection's `read` access
+
+### Issue: Every Reader Gets Only the Preview
+- The collection has no `customAuthCheck`, so nobody gets the original. Add one.
+- A Local API call without `req` reads as an anonymous visitor. Pass `req`.
 
 ### Issue: 401 Errors on Preview URLs
-- Verify `preserveOriginal: true` is set
-- Check that publicTransformation is properly configured
-- Ensure files aren't uploaded with authenticated type
+- The URL was edited after the plugin built it. Use the URL as returned.
+
+### Issue: 404 Errors on Preview URLs
+- The asset was deleted, renamed, or changed type outside the plugin, so the stored public ID, version or type no longer match it. Check the asset in the Cloudinary console.

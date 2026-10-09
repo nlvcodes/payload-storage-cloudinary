@@ -1,7 +1,65 @@
-import { CollectionBeforeChangeHook } from 'payload'
-import { v2 as cloudinary } from 'cloudinary'
-import type { CloudinaryCollectionConfig } from '../types.js'
+import { APIError, CollectionBeforeChangeHook } from 'payload'
+import type { CloudinaryCollectionConfig, CloudinaryDeliveryType } from '../types.js'
 import { getFolderConfig } from '../helpers/normalizeConfig.js'
+import {
+  assetFieldsOf,
+  buildDeliveryURL,
+  deliveryAssetOf,
+  STORED_URL_FIELDS,
+  THUMBNAIL_TRANSFORMATION,
+} from '../helpers/deliveryURL.js'
+import { renameAsset } from '../helpers/renameAsset.js'
+import { planMove, recordMove } from './assetMoves.js'
+
+export const PRIVACY_CHANGE_FAILED =
+  'Cloudinary could not change the privacy of this file. The file is unchanged. Try again.'
+
+/**
+ * The delivery type an update asks for when it sets `isPrivate`, or undefined when the asset is
+ * already where `isPrivate` says. Marking a file private moves it only when the checkbox changes:
+ * a legacy private row stored as `upload` moves through migratePrivateAssets. A save that leaves
+ * a file public moves an asset still at `authenticated`, as a draft or an interrupted save leaves
+ * it, so the next published save finishes the move.
+ */
+function privacyChangeTarget(
+  config: CloudinaryCollectionConfig,
+  data: Record<string, any>,
+  originalDoc: Record<string, any>,
+  storedType: CloudinaryDeliveryType,
+): CloudinaryDeliveryType | undefined {
+  if (!config.privateFiles || typeof data.isPrivate !== 'boolean') return undefined
+  if (data.isPrivate) {
+    return originalDoc.isPrivate !== true && storedType !== 'authenticated'
+      ? 'authenticated'
+      : undefined
+  }
+  return storedType === 'authenticated' ? 'upload' : undefined
+}
+
+/** The name of the dynamic folder field, or undefined when the folder is fixed. */
+function folderFieldOf(config: CloudinaryCollectionConfig): string | undefined {
+  const folderConfig = getFolderConfig(config)
+  return folderConfig.enableDynamic ? folderConfig.fieldName || 'cloudinaryFolder' : undefined
+}
+
+/**
+ * The public ID an update moves the asset to when it changes the dynamic folder, or undefined
+ * when the update leaves the folder as it is.
+ */
+function movedPublicId(
+  folderField: string | undefined,
+  data: Record<string, any>,
+  originalDoc: Record<string, any>,
+): string | undefined {
+  if (!folderField) return undefined
+
+  const oldFolder = originalDoc[folderField] || ''
+  const newFolder = data[folderField] || ''
+  if (oldFolder === newFolder) return undefined
+
+  const filename = String(originalDoc.cloudinaryPublicId).split('/').pop()
+  return newFolder ? `${newFolder}/${filename}` : filename
+}
 
 export const createBeforeChangeHook =
   (collectionSlug: string, config: CloudinaryCollectionConfig): CollectionBeforeChangeHook =>
@@ -42,84 +100,87 @@ export const createBeforeChangeHook =
       data.thumbnailURL = originalDoc.thumbnailURL
     }
 
-    const folderConfig = getFolderConfig(config)
+    // Marking a file private or public moves the asset to the matching delivery type, and a
+    // new dynamic folder moves it to a new public ID. One rename does both, from the stored type.
+    const storedAsset = deliveryAssetOf(originalDoc)
+    const toType = privacyChangeTarget(config, data, originalDoc, storedAsset.deliveryType)
+    const folderField = folderFieldOf(config)
+    const toPublicId = movedPublicId(folderField, data, originalDoc)
 
-    // Check if dynamic folders are enabled
-    if (!folderConfig.enableDynamic) {
+    // A replacement file uploads with the new type and folder, and the old asset is deleted,
+    // so there is nothing to rename.
+    if ((!toType && !toPublicId) || req.file) {
       return data
     }
 
-    const folderFieldName = folderConfig.fieldName || 'cloudinaryFolder'
-
-    // Check if folder has changed
-    const oldFolder = originalDoc[folderFieldName] || ''
-    const newFolder = data[folderFieldName] || ''
-
-    // If folder hasn't changed, nothing to do
-    if (oldFolder === newFolder) {
-      return data
-    }
-
-    // If we're changing folders and have a public ID, move the asset
-    try {
-      const oldPublicId = originalDoc.cloudinaryPublicId
-
-      // Extract the filename from the old public ID
-      const parts = oldPublicId.split('/')
-      const filename = parts[parts.length - 1]
-
-      // Construct new public ID with new folder
-      const newPublicId = newFolder ? `${newFolder}/${filename}` : filename
-
-      // Use Cloudinary's rename API to move the asset
-      const result = await cloudinary.uploader.rename(oldPublicId, newPublicId, {
-        resource_type: originalDoc.cloudinaryResourceType || 'auto',
-        overwrite: false,
-        invalidate: true,
+    // A move to `upload` waits until the row says the file is public: the afterChange hook
+    // renames the asset after the save. Until then the row keeps the stored asset, so it reads as
+    // private by its `authenticated` type, and a failed save leaves the asset where it was.
+    if (toType === 'upload') {
+      Object.assign(data, assetFieldsOf(storedAsset))
+      data.requiresSignedURL = false
+      planMove(req, {
+        collection: collectionSlug,
+        id: originalDoc.id,
+        from: storedAsset,
+        target: { publicId: toPublicId, deliveryType: toType },
+        restore: {
+          isPrivate: originalDoc.isPrivate,
+          requiresSignedURL: originalDoc.requiresSignedURL,
+          ...(folderField ? { [folderField]: originalDoc[folderField] ?? null } : {}),
+        },
       })
+      return data
+    }
 
-      if (result.public_id) {
-        // Update the data with new Cloudinary info
-        data.cloudinaryPublicId = result.public_id
-        data.cloudinaryUrl = result.secure_url
-        data.cloudinaryVersion = result.version
-        data.url = result.secure_url
-
-        // Update thumbnail URL with new path
-        const thumbnailUrl = cloudinary.url(result.public_id, {
-          secure: true,
-          version: result.version,
-          transformation: {
-            width: 150,
-            height: 150,
-            crop: 'fill',
-            gravity: 'auto',
-            quality: 'auto',
-            fetch_format: 'auto',
-          },
-        })
-        data.thumbnailURL = thumbnailUrl
-
-        // Update the folder field to reflect the actual folder used
-        if (result.folder) {
-          data[folderFieldName] = result.folder
-        }
-
-        req.payload.logger.info({
-          msg: `Moved Cloudinary asset from ${oldPublicId} to ${newPublicId}`,
-          collection: collectionSlug,
-        })
-      }
+    // A move to `authenticated`, or a folder move that keeps the type, exposes nothing before
+    // the save. When the save fails, the afterError hook moves the asset back.
+    let renamed
+    try {
+      renamed = await renameAsset(storedAsset, { publicId: toPublicId, deliveryType: toType })
     } catch (error) {
       req.payload.logger.error({
-        msg: `Failed to move Cloudinary asset`,
+        msg: toType
+          ? 'Failed to change the Cloudinary delivery type'
+          : 'Failed to move Cloudinary asset',
         collection: collectionSlug,
+        cloudinaryPublicId: storedAsset.publicId,
         error: error instanceof Error ? error.message : 'Unknown error',
       })
-
-      // Don't throw - let the update continue even if the move failed
-      // The asset will remain in the old location
+      // The privacy checkbox must match where the file lives, so a privacy change stops here.
+      if (toType) {
+        throw new APIError(PRIVACY_CHANGE_FAILED, 502, undefined, true)
+      }
+      // A failed folder move leaves the asset where it was, and the update continues.
+      return data
     }
+    recordMove(req, {
+      collection: collectionSlug,
+      id: originalDoc.id,
+      from: storedAsset,
+      to: renamed,
+    })
+
+    Object.assign(data, assetFieldsOf(renamed))
+    if (toType) {
+      data.requiresSignedURL = renamed.deliveryType === 'authenticated'
+    }
+    if (renamed.deliveryType === 'authenticated') {
+      // A private file stores no delivery URL: URLs are built at read time from the stored type.
+      // null clears the stored column, and the adapter drops it for a field the collection lacks.
+      for (const field of STORED_URL_FIELDS) data[field] = null
+    } else if (!toType) {
+      // A public file moved to another folder keeps its stored URLs pointing at the moved asset.
+      data.cloudinaryUrl = buildDeliveryURL(renamed)
+      data.url = data.cloudinaryUrl
+      data.thumbnailURL = buildDeliveryURL(renamed, { transformation: THUMBNAIL_TRANSFORMATION })
+    }
+
+    req.payload.logger.info({
+      msg: `Renamed Cloudinary asset ${storedAsset.publicId} to ${renamed.publicId}`,
+      collection: collectionSlug,
+      deliveryType: renamed.deliveryType,
+    })
 
     return data
   }
