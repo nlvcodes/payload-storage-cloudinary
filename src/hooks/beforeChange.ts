@@ -96,7 +96,6 @@ export const createBeforeChangeHook =
       data.cloudinaryFormat = originalDoc.cloudinaryFormat
       data.cloudinaryVersion = originalDoc.cloudinaryVersion
       data.url = originalDoc.url
-      data.originalUrl = originalDoc.originalUrl
       data.thumbnailURL = originalDoc.thumbnailURL
     }
 
@@ -108,8 +107,10 @@ export const createBeforeChangeHook =
     const toPublicId = movedPublicId(folderField, data, originalDoc)
 
     // A replacement file uploads with the new type and folder, and the old asset is deleted,
-    // so there is nothing to rename.
-    if ((!toType && !toPublicId) || req.file) {
+    // so there is nothing to rename. Payload v4 uploads in afterChange and writes the upload's
+    // metadata back with an internal update (context.skipCloudStorage); that update's
+    // originalDoc can still describe the replaced asset, so it never plans a move either.
+    if ((!toType && !toPublicId) || req.file || req.context?.skipCloudStorage) {
       return data
     }
 

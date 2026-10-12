@@ -197,7 +197,7 @@ export default buildConfig({
       ],
     },
   ],
-  plugins: [
+  storage: [
     cloudinaryStorage({
       cloudConfig: {
         cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,

@@ -17,9 +17,11 @@ export const createURLGenerator =
     const transformConfig = getTransformationConfig(config)
 
     // A private file gets its URLs from the afterRead hook, after the access check. This
-    // handler has no request, so it hands out nothing for one.
+    // handler has no request, so it hands out nothing for one. Payload v4 also stores what this
+    // returns, through the url fields' beforeChange hooks, so it returns null, which a private
+    // file stores in every URL field, rather than an empty string. The type allows only a string.
     if (config.privateFiles && isPrivateFile(data ?? {})) {
-      return ''
+      return null as unknown as string
     }
 
     try {

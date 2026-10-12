@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLocalReq, type CollectionConfig } from 'payload'
+import { createPayloadRequest, type CollectionConfig } from 'payload'
 import { pngUpload, startPayload, TEST_CLOUD, type PayloadHarness, type TestUser } from './harness'
 
 // Anyone reads the documents and their versions, so only the plugin's access rule decides which
@@ -139,7 +139,7 @@ describe('reads apply the access rule to every projection', () => {
   // A private row with stored delivery URLs, and a version row with the same data. Seeding them is
   // a trusted server job, so it writes through the database adapter.
   const seedStored = async (collection: string, publicId: string) => {
-    const req = await createLocalReq({}, harness.payload)
+    const req = await createPayloadRequest({ payload: harness.payload })
     const data = storedRow(publicId)
     const doc = await harness.payload.db.create({ collection, data, req })
     const now = new Date().toISOString()
@@ -197,7 +197,7 @@ describe('reads apply the access rule to every projection', () => {
     const post = await harness.payload.create({
       collection: 'posts',
       data: { premium: locked.id, denied: deniedID },
-      req: await createLocalReq({}, harness.payload),
+      req: await createPayloadRequest({ payload: harness.payload }),
       overrideAccess: true,
     })
 

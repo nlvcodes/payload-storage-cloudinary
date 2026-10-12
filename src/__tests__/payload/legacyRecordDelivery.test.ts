@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLocalReq } from 'payload'
+import { createPayloadRequest } from 'payload'
 import { getSignedURL } from '../../helpers/serverHelpers'
 import { pngUpload, startPayload, TEST_CLOUD, type PayloadHarness, type TestUser } from './harness'
 
@@ -38,13 +38,14 @@ describe('URL helpers read the delivery type from the stored record', () => {
   // Rewrites the stored fields the way a 1.2.x private upload left them, without running hooks.
   const uploadLegacyPrivate = async (filename: string) => {
     const { doc, version } = await uploadPrivate(filename)
-    const req = await createLocalReq({}, harness.payload)
+    const req = await createPayloadRequest({ payload: harness.payload })
     await harness.payload.db.updateOne({
       collection: 'media',
       id: doc.id,
       data: {
         cloudinaryType: null,
-        originalUrl: `${BASE}/upload/v${version}/${doc.cloudinaryPublicId}.png`,
+        // A 1.x originalUrl, where 2.0 reads it on SQL
+        original: { url: `${BASE}/upload/v${version}/${doc.cloudinaryPublicId}.png` },
       },
       req,
     })
@@ -72,7 +73,8 @@ describe('URL helpers read the delivery type from the stored record', () => {
       const body = await res.json()
 
       expect(pathOf(body.downloadUrl)).toBe(
-        `${BASE}/upload/fl_attachment:legacy-download/v${version}/${doc.cloudinaryPublicId}.png`,
+        // The attachment name is the stored filename, which Payload v4 suffixes with -original
+        `${BASE}/upload/fl_attachment:legacy-download-original/v${version}/${doc.cloudinaryPublicId}.png`,
       )
     })
 
@@ -95,7 +97,8 @@ describe('URL helpers read the delivery type from the stored record', () => {
 
   describe('getSignedURL server helper', () => {
     // The helper enforces access, so it runs as the logged-in user that uploaded the file
-    const asUser = async () => createLocalReq({ user: await harness.userOf(user) }, harness.payload)
+    const asUser = async () =>
+      createPayloadRequest({ user: await harness.userOf(user), payload: harness.payload })
 
     it('returns a signed authenticated URL for a private record', async () => {
       const { doc, version } = await uploadPrivate('server.png')

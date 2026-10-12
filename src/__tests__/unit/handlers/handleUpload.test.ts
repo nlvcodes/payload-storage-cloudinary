@@ -51,7 +51,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(mockOptions)
       const file = mockFile({ filesize: 50 * 1024 * 1024 }) // 50MB
-      const data = {}
+      const data = { filename: file.filename }
 
       const result = await handler({
         collection: mockCollection as any,
@@ -67,7 +67,7 @@ describe('handleUpload', () => {
         expect.any(Function)
       )
 
-      // Handler must return data (not void) for plugin-cloud-storage 3.70.0+
+      // Payload v4 persists the metadata the handler returns for the main file
       expect(result).toBeDefined()
       expect(result.cloudinaryPublicId).toBe(mockResponse.public_id)
       expect(result.cloudinaryVersion).toBe(mockResponse.version)
@@ -97,7 +97,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(mockOptions)
       const file = mockFile()
-      const data = {}
+      const data = { filename: file.filename }
 
       await expect(
         handler({ collection: mockCollection as any, file, data })
@@ -121,7 +121,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(mockOptions)
       const file = mockFile({ filesize: 150 * 1024 * 1024 }) // 150MB
-      const data = {}
+      const data = { filename: file.filename }
 
       const result = await handler({
         collection: mockCollection as any,
@@ -154,7 +154,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(mockOptions)
       const file = mockFile({ filesize: 500 * 1024 * 1024 }) // 500MB
-      const data = {}
+      const data = { filename: file.filename }
 
       await expect(
         handler({ collection: mockCollection as any, file, data })
@@ -233,7 +233,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(optionsWithPrivateFiles)
       const file = mockFile()
-      const data = {}
+      const data = { filename: file.filename }
 
       const result = await handler({
         collection: mockCollection as any,
@@ -254,45 +254,50 @@ describe('handleUpload', () => {
     })
   })
 
-  describe('Return value contract (Issue #3)', () => {
-    it('should return data when clientUploadContext is present (skip re-upload)', async () => {
+  describe('Return value contract', () => {
+    it('should return metadata only, leaving data unchanged', async () => {
+      const mockResponse = mockCloudinaryResponse()
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation((options, callback) => {
+        setTimeout(() => callback!(null, mockResponse), 0)
+        return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+      })
       const handler = createUploadHandler(mockOptions)
       const file = mockFile()
-      const data = { existingField: 'value' }
+      const data = { filename: file.filename, existingField: 'value' }
 
-      const result = await handler({
-        collection: mockCollection as any,
-        file,
-        data,
-        clientUploadContext: { uploadId: '123' },
-      } as any)
+      const result = await handler({ collection: mockCollection as any, file, data } as any)
 
-      // Should return data without uploading
-      expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled()
-      expect(result).toBe(data)
+      expect(result).not.toBe(data)
+      expect(result).not.toHaveProperty('existingField')
+      expect(result.cloudinaryPublicId).toBe(mockResponse.public_id)
+      expect(data).toEqual({ filename: file.filename, existingField: 'value' })
     })
 
-    it('should return data on early return when no buffer and existing publicId', async () => {
+    it('should return nothing for a generated size, so it cannot overwrite the main file', async () => {
+      vi.mocked(cloudinary.uploader.upload_stream).mockImplementation((options, callback) => {
+        setTimeout(() => callback!(null, mockCloudinaryResponse()), 0)
+        return { end: vi.fn(), on: vi.fn(), pipe: vi.fn() } as any
+      })
       const handler = createUploadHandler(mockOptions)
-      const file = { ...mockFile(), buffer: undefined as any }
-      const data = {
-        cloudinaryPublicId: 'existing-id',
-        cloudinaryUrl: 'https://example.com/image.jpg',
-        filename: 'test.jpg',
-        filesize: 1024,
-        mimeType: 'image/jpeg',
-      }
+      const file = mockFile({ filename: 'test-300x300.jpg' })
 
       const result = await handler({
         collection: mockCollection as any,
         file,
-        data
-      })
+        data: { filename: 'test.jpg' },
+      } as any)
 
-      // Should return data without uploading
+      expect(result).toEqual({})
+    })
+
+    it('should throw when the file has neither a buffer nor a temp file', async () => {
+      const handler = createUploadHandler(mockOptions)
+      const file = { ...mockFile(), buffer: undefined as any }
+
+      await expect(
+        handler({ collection: mockCollection as any, file, data: { filename: file.filename } } as any),
+      ).rejects.toThrow('No file buffer provided for upload')
       expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled()
-      expect(result).toBeDefined()
-      expect(result.cloudinaryPublicId).toBe('existing-id')
     })
 
     it('should upload a replacement file when the document has a publicId', async () => {
@@ -513,7 +518,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(optionsWithUseFilename)
       const file = mockFile({ filename: 'my-document.pdf' })
-      const data = {}
+      const data = { filename: file.filename }
 
       await handler({ collection: mockCollection as any, file, data })
 
@@ -552,7 +557,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(optionsWithUseFilename)
       const file = mockFile({ filename: 'README' })
-      const data = {}
+      const data = { filename: file.filename }
 
       await handler({ collection: mockCollection as any, file, data })
 
@@ -590,7 +595,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(optionsWithoutUseFilename)
       const file = mockFile({ filename: 'my-document.pdf' })
-      const data = {}
+      const data = { filename: file.filename }
 
       await handler({ collection: mockCollection as any, file, data })
 
@@ -621,7 +626,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(mockOptions)
       const file = mockFile({ mimeType: 'image/svg+xml', filename: 'icon.svg' })
-      const data = {}
+      const data = { filename: file.filename }
 
       await handler({
         collection: mockCollection as any,
@@ -654,7 +659,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(mockOptions)
       const file = mockFile({ mimeType: 'image/png', filename: 'photo.png' })
-      const data = {}
+      const data = { filename: file.filename }
 
       await handler({
         collection: mockCollection as any,
@@ -696,7 +701,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(optionsWithResourceType)
       const file = mockFile({ mimeType: 'image/svg+xml', filename: 'icon.svg' })
-      const data = {}
+      const data = { filename: file.filename }
 
       await handler({
         collection: mockCollection as any,

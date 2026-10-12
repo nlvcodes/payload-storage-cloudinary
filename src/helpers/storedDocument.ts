@@ -4,6 +4,7 @@ import {
   type PayloadRequest,
   type SanitizedCollectionConfig,
 } from 'payload'
+import { storedURLDeliveryType } from './deliveryURL.js'
 
 /**
  * A document as stored, as a read with every field visible shows it: every field, localized
@@ -122,6 +123,14 @@ async function asReaderSees(
   const config = req.payload.collections[collection]?.config
   if (!config) throw new Error(`Unknown collection: ${collection}`)
   const localization = req.payload.config.localization
+
+  // A read resolves a legacy record's type in the beforeRead hook, from its stored URLs, before
+  // the field hooks rewrite them (Payload v4 rebuilds `original.url`). Flattening runs only the
+  // field hooks, so it is resolved here first.
+  if (row.cloudinaryPublicId && !row.cloudinaryType) {
+    const deliveryType = storedURLDeliveryType(row)
+    if (deliveryType) row.cloudinaryType = deliveryType
+  }
 
   if (!localization) {
     const doc = await flatten(req, config, row, null, null)

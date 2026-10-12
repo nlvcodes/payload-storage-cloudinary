@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { v2 as cloudinary } from 'cloudinary'
-import { createLocalReq, type CollectionConfig } from 'payload'
+import { createPayloadRequest, type CollectionConfig } from 'payload'
 import { changeDeliveryType } from '../../index'
 import { STORED_URL_FIELDS } from '../../helpers/deliveryURL'
 import { pngUpload, startPayload, type PayloadHarness, type TestUser } from './harness'
@@ -57,7 +57,7 @@ describe('Cloudinary operations use the stored type', () => {
     harness.payload.findByID({
       collection,
       id,
-      req: await createLocalReq({}, harness.payload),
+      req: await createPayloadRequest({ payload: harness.payload }),
       overrideAccess: true,
     })
 

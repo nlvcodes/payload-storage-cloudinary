@@ -15,7 +15,7 @@
  */
 
 import { generateSignedURL as generateCloudinarySignedURL } from './signedURLs.js'
-import { APIError, createLocalReq, type Payload, type PayloadRequest } from 'payload'
+import { APIError, createPayloadRequest, type Payload, type PayloadRequest } from 'payload'
 import type { CloudinaryCollectionConfig } from '../types.js'
 import {
   normalizeCollectionConfig,
@@ -107,7 +107,7 @@ async function readFile({
   overrideAccess = false,
 }: LookupOptions): Promise<ReadableFile | null> {
   try {
-    const lookupReq = req ?? (await createLocalReq({ user: user ?? undefined }, payload))
+    const lookupReq = req ?? (await createPayloadRequest({ payload, user: user ?? undefined }))
     // The Local API skips access unless overrideAccess is false, even with req or user
     const doc = await payload.findByID({
       collection,

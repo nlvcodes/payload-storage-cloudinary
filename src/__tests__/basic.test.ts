@@ -26,10 +26,11 @@ describe('Basic Plugin Tests', () => {
       },
     }
 
-    const plugin = cloudinaryStorage(options)
-    expect(plugin).toBeDefined()
-    // The plugin returns a function (Payload plugin pattern)
-    expect(typeof plugin).toBe('function')
+    const adapter = cloudinaryStorage(options)
+    // A Payload v4 storage adapter, registered under `storage`
+    expect(adapter.name).toBe('cloudinary')
+    expect(adapter.collections).toEqual(['media'])
+    expect(typeof adapter.init).toBe('function')
   })
 
   it('should validate cloud config', () => {

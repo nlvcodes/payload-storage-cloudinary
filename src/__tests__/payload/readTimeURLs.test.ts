@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLocalReq, type CollectionConfig } from 'payload'
+import { createPayloadRequest, type CollectionConfig } from 'payload'
 import { pngUpload, startPayload, TEST_CLOUD, type PayloadHarness, type TestUser } from './harness'
 
 // Anyone reads the document. customAuthCheck gives the original to logged-in readers only, so a
@@ -62,7 +62,8 @@ const legacyRow = (publicId: string, version: number) => ({
   cloudinaryResourceType: 'image',
   cloudinaryFormat: 'png',
   cloudinaryUrl: `${BASE}/upload/v${version}/${publicId}.png`,
-  originalUrl: `${BASE}/upload/v${version}/${publicId}.png`,
+  // A 1.x originalUrl: Payload v4's original.url uses its column, so 2.0 reads it there
+  original: { url: `${BASE}/upload/v${version}/${publicId}.png` },
   isPrivate: true,
   requiresSignedURL: true,
 })
@@ -237,7 +238,7 @@ describe('URLs are built at read time and nothing deliverable is stored', () => 
       collection: 'media',
       data: legacyRow('legacy/local', 1600000001),
     })
-    const req = await createLocalReq({}, harness.payload)
+    const req = await createPayloadRequest({ payload: harness.payload })
 
     const doc = await harness.payload.findByID({
       collection: 'media',

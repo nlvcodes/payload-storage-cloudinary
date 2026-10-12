@@ -93,8 +93,8 @@ describe('generateURL', () => {
       { ...stored, cloudinaryType: 'authenticated', requiresSignedURL: true, isPrivate: true },
     )
 
-    expect(legacy).toBe('')
-    expect(current).toBe('')
+    expect(legacy).toBeNull()
+    expect(current).toBeNull()
   })
 
   it('builds the URL from the stored fields, not from a stored Cloudinary URL', () => {

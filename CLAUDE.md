@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a Cloudinary storage adapter plugin for Payload CMS v3. It replaces the default local file storage with Cloudinary's cloud storage service, providing automatic image optimization, transformations, and CDN delivery.
+This is a Cloudinary storage adapter for Payload CMS v4 (2.x; Payload v3 is supported by 1.x). It replaces the default local file storage with Cloudinary's cloud storage service, providing automatic image optimization, transformations, and CDN delivery.
 
 ## Build and Development Commands
 
@@ -41,10 +41,10 @@ pnpm prepublishOnly     # Clean and build before publishing
 The plugin follows Payload's cloud storage adapter pattern, built on top of `@payloadcms/plugin-cloud-storage`:
 
 1. **Entry Point** (`src/index.ts`): 
-   - Exports `cloudinaryStorage` function that returns a Payload plugin
+   - Exports `cloudinaryStorage` function that returns a Payload v4 `StorageAdapter` (`{ name, collections, init }`), registered under `storage` in the Payload config
    - Validates required Cloudinary credentials
    - Creates collection-specific adapter configurations
-   - Wraps everything in the base `cloudStoragePlugin`
+   - `init` wraps everything in the base `cloudStoragePlugin`
 
 2. **Handler Architecture** (`src/handlers/`):
    - Each handler implements a specific interface from `@payloadcms/plugin-cloud-storage/types`
@@ -59,8 +59,10 @@ The plugin follows Payload's cloud storage adapter pattern, built on top of `@pa
 
 ### Handler Responsibilities
 
-- **handleUpload**: Streams file buffer to Cloudinary, stores the public_id in document data
-- **handleDelete**: Removes files from Cloudinary using stored public_id or extracted from URL
+- **handleUpload**: Streams file buffer to Cloudinary. Payload v4 stages it before the document hooks run and persists only the metadata it returns; `data` is read-only. A replacement reads the stored privacy and folder of the update's target (see `src/helpers/requestUploads.ts`)
+- **handleDelete**: Removes files from Cloudinary using stored public_id or extracted from URL (Payload's document-based delete)
+- **deleteFile**: Payload v4's key-based delete (rollback, and cleanup after commit). Maps the storage key to a Cloudinary asset through the per-request record in `src/helpers/requestUploads.ts`
+- **copyFile**: Rejects; file versioning restore and rename are not supported yet
 - **generateURL**: Creates Cloudinary URLs with optional transformations
 - **staticHandler**: Redirects requests to Cloudinary CDN
 

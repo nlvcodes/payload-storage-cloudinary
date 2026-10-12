@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLocalReq, type CollectionConfig, type PayloadRequest } from 'payload'
+import { createPayloadRequest, type CollectionConfig, type PayloadRequest } from 'payload'
 import { createStaticHandler } from '../../handlers/staticHandler'
 import { pngUpload, startPayload, TEST_CLOUD, type PayloadHarness, type TestUser } from './harness'
 
@@ -91,7 +91,7 @@ describe('the static handler decides like the plugin', () => {
   // Calls the handler as Payload's file endpoint does. `withRow` passes the raw database row that
   // Payload's file access check reads when `read` access returns a query.
   const serve = async (doc: Uploaded, user: User | undefined, withRow: boolean) => {
-    const req = await createLocalReq({ user }, harness.payload)
+    const req = await createPayloadRequest({ user, payload: harness.payload })
     const row = withRow
       ? await harness.payload.db.findOne({
           collection: 'localized',
@@ -144,7 +144,7 @@ describe('the static handler decides like the plugin', () => {
       collection: 'localized',
       id: doc.id,
       data: { cloudinaryUrl: stale },
-      req: await createLocalReq({}, harness.payload),
+      req: await createPayloadRequest({ payload: harness.payload }),
     })
 
     for (const withRow of [true, false]) {
@@ -157,9 +157,12 @@ describe('the static handler decides like the plugin', () => {
   })
 
   it('refuses a filename no document has', async () => {
-    const res = await handler(await createLocalReq({ user: adminUser }, harness.payload), {
-      params: { collection: 'localized', filename: 'no-such-file.png' },
-    } as any)
+    const res = await handler(
+      await createPayloadRequest({ user: adminUser, payload: harness.payload }),
+      {
+        params: { collection: 'localized', filename: 'no-such-file.png' },
+      } as any,
+    )
     expect(res.status).toBe(404)
   })
 })

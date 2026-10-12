@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
-  createLocalReq,
+  createPayloadRequest,
   initTransaction,
   killTransaction,
   type CollectionConfig,
@@ -50,7 +50,7 @@ describe('the stored-row writes the hooks and the migration share', () => {
     await harness?.stop()
   })
 
-  const localReq = () => createLocalReq({}, harness.payload)
+  const localReq = () => createPayloadRequest({ payload: harness.payload })
 
   // Writes a row straight to the database, with a note that joins it.
   const seed = async () => {

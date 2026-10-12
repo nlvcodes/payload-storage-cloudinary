@@ -4,7 +4,7 @@ import path from 'node:path'
 import { sqliteAdapter, type SQLiteAdapterArgs } from '@payloadcms/db-sqlite'
 import {
   buildConfig,
-  createLocalReq,
+  createPayloadRequest,
   getPayload,
   handleEndpoints,
   type CollectionConfig,
@@ -102,7 +102,7 @@ export async function startPayload(options: StartOptions = {}): Promise<PayloadH
       }),
       collections: [users, ...(options.collections ?? [media])],
       localization: options.localization,
-      plugins: [
+      storage: [
         cloudinaryStorage({
           cloudConfig: TEST_CLOUD,
           collections: options.pluginCollections ?? { media: { privateFiles: true } },
@@ -117,7 +117,7 @@ export async function startPayload(options: StartOptions = {}): Promise<PayloadH
       const email = `user-${userCount}@example.com`
       const password = 'test-password'
       // Seeding is a trusted server job, so it skips access on purpose.
-      const req = await createLocalReq({}, payload)
+      const req = await createPayloadRequest({ payload })
       await payload.create({
         collection: 'users',
         data: { email, password },
@@ -138,7 +138,7 @@ export async function startPayload(options: StartOptions = {}): Promise<PayloadH
       const doc = await payload.findByID({
         collection: 'users',
         id: user.id,
-        req: await createLocalReq({}, payload),
+        req: await createPayloadRequest({ payload }),
         overrideAccess: true,
       })
       return { ...doc, collection: 'users' } as NonNullable<PayloadRequest['user']>
@@ -193,12 +193,9 @@ async function stopPayload({
   forcePushBefore: string | undefined
 }) {
   await payload?.destroy()
-  // getPayload caches one instance per process. Clear it so the next boot gets a fresh one.
-  const cached = (globalThis as any)._payload
-  if (cached) {
-    cached.payload = null
-    cached.promise = null
-  }
+  // getPayload caches one instance per key, in a Map since Payload v4. Clear it so the next boot
+  // gets a fresh one.
+  ;(globalThis as any)._payload?.clear?.()
   cloudinaryMock.restore()
   if (forcePushBefore === undefined) delete process.env[FORCE_PUSH]
   else process.env[FORCE_PUSH] = forcePushBefore

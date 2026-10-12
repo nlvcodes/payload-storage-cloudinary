@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLocalReq, type CollectionConfig, type PayloadRequest } from 'payload'
+import { createPayloadRequest, type CollectionConfig, type PayloadRequest } from 'payload'
 import {
   getPremiumImageURL,
   getPrivateImageURL,
@@ -115,7 +115,7 @@ describe('server helpers enforce access by default', () => {
 
     it('getPrivateImageURL returns a signed authenticated URL for a permitted req', async () => {
       const doc = await uploadPrivate('req-private.png')
-      const req = await createLocalReq({ user: memberUser }, harness.payload)
+      const req = await createPayloadRequest({ user: memberUser, payload: harness.payload })
 
       const url = await getPrivateImageURL(doc, {
         payload: harness.payload,
@@ -140,7 +140,7 @@ describe('server helpers enforce access by default', () => {
 
     it('getServerImageURL returns a signed authenticated URL for a permitted req', async () => {
       const doc = await uploadPrivate('req-server.png')
-      const req = await createLocalReq({ user: memberUser }, harness.payload)
+      const req = await createPayloadRequest({ user: memberUser, payload: harness.payload })
 
       const url = await getServerImageURL(doc, {
         payload: harness.payload,
@@ -169,7 +169,7 @@ describe('server helpers enforce access by default', () => {
     it('maps every ID to a signed authenticated URL for a permitted req', async () => {
       const first = await uploadPrivate('batch-req-1.png')
       const second = await uploadPrivate('batch-req-2.png')
-      const req = await createLocalReq({ user: memberUser }, harness.payload)
+      const req = await createPayloadRequest({ user: memberUser, payload: harness.payload })
 
       const urls = await getSignedURLs({
         payload: harness.payload,
@@ -184,7 +184,7 @@ describe('server helpers enforce access by default', () => {
 
     it('maps a readable ID to a URL and an unreadable one to null in the same batch', async () => {
       const doc = await uploadPrivate('batch-mixed.png')
-      const req = await createLocalReq({ user: memberUser }, harness.payload)
+      const req = await createPayloadRequest({ user: memberUser, payload: harness.payload })
 
       const urls = await getSignedURLs({
         payload: harness.payload,
@@ -237,8 +237,8 @@ describe('server helpers enforce access by default', () => {
 
     it('gives the original only to a reader whom customAuthCheck allows', async () => {
       const doc = await uploadPrivate('premium.png', 'premium')
-      const memberReq = await createLocalReq({ user: memberUser }, harness.payload)
-      const adminReq = await createLocalReq({ user: adminUser }, harness.payload)
+      const memberReq = await createPayloadRequest({ user: memberUser, payload: harness.payload })
+      const adminReq = await createPayloadRequest({ user: adminUser, payload: harness.payload })
 
       const options = { payload: harness.payload, collection: 'premium' }
       expect(await getPrivateImageURL(doc, { ...options, req: memberReq })).toBeNull()
@@ -345,7 +345,7 @@ describe('server helpers enforce access by default', () => {
     it('getPremiumImageURL returns no URL to a reader the access rule gives nothing, even with a stored preview', async () => {
       const doc = await uploadPrivate('premium-none.png', 'premium', { withPreview: false })
       // A preview stored by 1.2.x, written without hooks
-      const req = await createLocalReq({}, harness.payload)
+      const req = await createPayloadRequest({ payload: harness.payload })
       await harness.payload.db.updateOne({
         collection: 'premium',
         id: doc.id,

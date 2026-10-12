@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { createLocalReq, type CollectionConfig, type PayloadRequest } from 'payload'
+import { createPayloadRequest, type CollectionConfig, type PayloadRequest } from 'payload'
 import {
   getPremiumImageURL,
   getPrivateImageURL,
@@ -128,7 +128,7 @@ describe('the endpoints and the server helpers decide on the stored document', (
       const doc = await upload('helpers-locked.png', { locked: true })
       const payload = harness.payload
       const collection = 'premium'
-      const memberReq = await createLocalReq({ user: memberUser }, payload)
+      const memberReq = await createPayloadRequest({ user: memberUser, payload })
 
       for (const access of [{}, { user: memberUser }, { req: memberReq }]) {
         expect(await getSignedURL({ payload, collection, docId: doc.id, ...access })).toBeNull()
@@ -169,7 +169,7 @@ describe('the endpoints and the server helpers decide on the stored document', (
       const locked = await upload('helpers-allowed.png', { locked: true })
       const payload = harness.payload
       const collection = 'premium'
-      const adminReq = await createLocalReq({ user: adminUser }, payload)
+      const adminReq = await createPayloadRequest({ user: adminUser, payload })
 
       for (const access of [{ user: adminUser }, { req: adminReq }]) {
         const original = signedOriginal(locked)

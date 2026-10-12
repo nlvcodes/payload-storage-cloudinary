@@ -151,7 +151,8 @@ describe('a publicTransformation collection gives preview readers a signed previ
         cloudinaryVersion: version,
         cloudinaryResourceType: 'image',
         cloudinaryFormat: 'png',
-        originalUrl: `${BASE}/upload/v${version}/${publicId}.png`,
+        // A 1.x originalUrl, where 2.0 reads it on SQL
+        original: { url: `${BASE}/upload/v${version}/${publicId}.png` },
         cloudinaryUrl: `${BASE}/upload/v${version}/${publicId}.png`,
         isPrivate: true,
         requiresSignedURL: true,

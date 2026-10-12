@@ -44,17 +44,18 @@ describe('cloudinaryStorage plugin integration', () => {
   })
 
   describe('plugin creation', () => {
-    it('should create plugin that returns a function', () => {
-      const plugin = cloudinaryStorage({
+    it('should create a Payload v4 storage adapter', () => {
+      const adapter = cloudinaryStorage({
         cloudConfig: validCloudConfig,
         collections: { media: true },
       })
 
-      expect(typeof plugin).toBe('function')
+      expect(adapter.name).toBe('cloudinary')
+      expect(typeof adapter.init).toBe('function')
     })
 
     it('should handle multiple collections', () => {
-      const plugin = cloudinaryStorage({
+      const adapter = cloudinaryStorage({
         cloudConfig: validCloudConfig,
         collections: {
           media: { folder: 'media' },
@@ -63,23 +64,23 @@ describe('cloudinaryStorage plugin integration', () => {
         },
       })
 
-      expect(typeof plugin).toBe('function')
+      expect(adapter.collections).toEqual(['media', 'documents', 'videos'])
     })
 
     it('should normalize boolean configuration', () => {
       // Should not throw when using boolean config
-      const plugin = cloudinaryStorage({
+      const adapter = cloudinaryStorage({
         cloudConfig: validCloudConfig,
         collections: { media: true },
       })
 
-      expect(typeof plugin).toBe('function')
+      expect(adapter.collections).toEqual(['media'])
     })
   })
 
   describe('plugin application', () => {
     it('should configure endpoints for collections with private files', () => {
-      const plugin = cloudinaryStorage({
+      const adapter = cloudinaryStorage({
         cloudConfig: validCloudConfig,
         collections: {
           media: { privateFiles: true },
@@ -94,7 +95,7 @@ describe('cloudinaryStorage plugin integration', () => {
         ],
       }
 
-      const result = plugin(mockConfig as any)
+      const result = adapter.init(mockConfig as any)
 
       // Media collection should have signed URL endpoints
       const mediaCollection = result.collections?.find((c: any) => c.slug === 'media')
@@ -107,7 +108,7 @@ describe('cloudinaryStorage plugin integration', () => {
     })
 
     it('should add hooks for all configured collections', () => {
-      const plugin = cloudinaryStorage({
+      const adapter = cloudinaryStorage({
         cloudConfig: validCloudConfig,
         collections: { media: true },
       })
@@ -116,7 +117,7 @@ describe('cloudinaryStorage plugin integration', () => {
         collections: [{ slug: 'media', endpoints: [], hooks: {} }],
       }
 
-      const result = plugin(mockConfig as any)
+      const result = adapter.init(mockConfig as any)
 
       const mediaCollection = result.collections?.find((c: any) => c.slug === 'media')
       expect(mediaCollection?.hooks?.beforeValidate?.length).toBeGreaterThanOrEqual(1)
@@ -124,7 +125,7 @@ describe('cloudinaryStorage plugin integration', () => {
     })
 
     it('should not modify unconfigured collections', () => {
-      const plugin = cloudinaryStorage({
+      const adapter = cloudinaryStorage({
         cloudConfig: validCloudConfig,
         collections: { media: true },
       })
@@ -136,7 +137,7 @@ describe('cloudinaryStorage plugin integration', () => {
         ],
       }
 
-      const result = plugin(mockConfig as any)
+      const result = adapter.init(mockConfig as any)
 
       const otherCollection = result.collections?.find((c: any) => c.slug === 'other')
       expect(otherCollection?.endpoints).toEqual([{ path: '/existing' }])

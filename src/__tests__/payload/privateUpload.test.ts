@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLocalReq, type CollectionConfig } from 'payload'
+import { createPayloadRequest, type CollectionConfig } from 'payload'
 import { pngUpload, startPayload, type PayloadHarness, type TestUser } from './harness'
 
 const uploadCollection = (slug: string): CollectionConfig => ({
@@ -77,7 +77,7 @@ describe('private originals upload as authenticated', () => {
     const { doc: publicDoc } = await upload('media', 'stored-public.png', { isPrivate: false })
 
     // Reading the stored row is a trusted check, so it skips access on purpose.
-    const req = await createLocalReq({}, harness.payload)
+    const req = await createPayloadRequest({ payload: harness.payload })
     const readPrivate = await harness.payload.findByID({
       collection: 'previews',
       id: privateDoc.id,

@@ -1,11 +1,16 @@
 import type { HandleDelete } from '@payloadcms/plugin-cloud-storage/types'
-import type { CloudinaryStorageOptions, CloudinaryDocumentData } from '../types.js'
+import type {
+  CloudinaryDeliveryType,
+  CloudinaryStorageOptions,
+  CloudinaryDocumentData,
+} from '../types.js'
 import { v2 as cloudinary } from 'cloudinary'
 import { deliveryAssetOf } from '../helpers/deliveryURL.js'
+import { markDestroyed, wasDestroyed, wasUploadedInRequest } from '../helpers/requestUploads.js'
 
 export const createDeleteHandler =
   (options: CloudinaryStorageOptions): HandleDelete =>
-  async ({ collection, doc }) => {
+  async ({ collection, doc, req }) => {
     const collectionConfig = options.collections[collection.slug]
 
     if (!collectionConfig || typeof collectionConfig === 'boolean') {
@@ -29,22 +34,19 @@ export const createDeleteHandler =
         (doc.url?.includes('cloudinary.com') ? extractPublicId(doc.url) : null)
       const resourceType = docData.cloudinaryResourceType || 'image'
 
-      if (publicId) {
-        // Delete the main asset. destroy defaults to `upload`, so pass the stored type.
-        await cloudinary.uploader.destroy(publicId, {
-          resource_type: resourceType,
-          type: deliveryAssetOf(docData).deliveryType,
-          invalidate: true, // Invalidate CDN cache
-        })
+      // A replacement can upload to the same public ID as the file it replaces (e.g. useFilename
+      // with a new extension). Payload v4 deletes after uploading, so don't delete the new asset.
+      if (publicId && (wasUploadedInRequest(req, publicId) || wasDestroyed(req, publicId))) {
+        return
+      }
 
-        // Also delete all derived resources (transformations)
-        try {
-          await cloudinary.api.delete_derived_resources([publicId], {
-            resource_type: resourceType,
-          })
-        } catch {
-          // It's okay if this fails - not all resources have derived versions
-        }
+      if (publicId) {
+        await destroyAsset({
+          publicId,
+          resourceType,
+          deliveryType: deliveryAssetOf(docData).deliveryType,
+        })
+        markDestroyed(req, publicId)
       }
     } catch (error) {
       console.error(
@@ -52,6 +54,36 @@ export const createDeleteHandler =
       )
     }
   }
+
+/**
+ * Deletes an asset and its derived resources. Shared by the document-based `handleDelete` and
+ * Payload v4's key-based `deleteFile`.
+ */
+export async function destroyAsset({
+  publicId,
+  resourceType,
+  deliveryType,
+}: {
+  publicId: string
+  resourceType: string
+  deliveryType: CloudinaryDeliveryType
+}): Promise<void> {
+  // Delete the main asset. destroy defaults to `upload`, so pass the stored type.
+  await cloudinary.uploader.destroy(publicId, {
+    resource_type: resourceType,
+    type: deliveryType,
+    invalidate: true, // Invalidate CDN cache
+  })
+
+  // Also delete all derived resources (transformations)
+  try {
+    await cloudinary.api.delete_derived_resources([publicId], {
+      resource_type: resourceType,
+    })
+  } catch {
+    // It's okay if this fails - not all resources have derived versions
+  }
+}
 
 function extractPublicId(urlOrFilename: string): string | null {
   try {

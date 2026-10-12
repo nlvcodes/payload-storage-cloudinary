@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest'
-import { createLocalReq, type CollectionConfig, type PayloadRequest } from 'payload'
+import { createPayloadRequest, type CollectionConfig, type PayloadRequest } from 'payload'
 import { getSignedURL, isAccessAllowedByID } from '../../index'
 import { pngUpload, startPayload, type PayloadHarness, type TestUser } from './harness'
 
@@ -103,7 +103,7 @@ describe('the stored row keeps every value the database adapter returns', () => 
   }
 
   const decide = async (id: number, user?: User) => {
-    const req = await createLocalReq({ user }, harness.payload)
+    const req = await createPayloadRequest({ user, payload: harness.payload })
     return {
       allowed: await isAccessAllowedByID({ req, collection: 'owned', id }),
       url: await getSignedURL({ payload: harness.payload, collection: 'owned', docId: id, req }),

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { createLocalReq, type CollectionConfig, type PayloadRequest } from 'payload'
+import { createPayloadRequest, type CollectionConfig, type PayloadRequest } from 'payload'
 import { getSignedURL } from '../../index'
 import { pngUpload, startPayload, TEST_CLOUD, type PayloadHarness, type TestUser } from './harness'
 
@@ -167,7 +167,7 @@ describe('the access rule reads the stored row as the reader sees it', () => {
       payload: harness.payload,
       collection: 'localized',
       docId: id as number,
-      req: await createLocalReq({ locale: locale as any, user }, harness.payload),
+      req: await createPayloadRequest({ locale: locale as any, user, payload: harness.payload }),
     })
 
   // Every query a reader can add to choose the locale. No query reads the default locale.
@@ -225,7 +225,7 @@ describe('the access rule reads the stored row as the reader sees it', () => {
       const { docs: versions } = await harness.payload.findVersions({
         collection: 'versioned',
         where: { parent: { equals: doc.id } },
-        req: await createLocalReq({}, harness.payload),
+        req: await createPayloadRequest({ payload: harness.payload }),
         overrideAccess: true,
         depth: 0,
       })
@@ -324,7 +324,7 @@ describe('the access rule reads the stored row as the reader sees it', () => {
         collection: collection as 'versioned',
         where: { parent: { equals: parent } },
         sort: 'createdAt',
-        req: await createLocalReq({}, harness.payload),
+        req: await createPayloadRequest({ payload: harness.payload }),
         overrideAccess: true,
         depth: 0,
       })
@@ -334,7 +334,8 @@ describe('the access rule reads the stored row as the reader sees it', () => {
     it('gives no URL for an old version that passes the check when the document fails it', async () => {
       const doc = await upload('versioned', 'stale.png', { locked: false })
       await patch(`/api/versioned/${doc.id}`, { locked: true })
-      const [stale, current] = await versionsOf('versioned', doc.id)
+      // Payload v4 saves a create as two versions: the insert and the upload metadata write-back
+      const [stale, current] = (await versionsOf('versioned', doc.id)).slice(-2)
       expect(stale.version.locked).toBe(false)
       expect(current.version.locked).toBe(true)
 
@@ -345,7 +346,10 @@ describe('the access rule reads the stored row as the reader sees it', () => {
       const local = await harness.payload.findVersionByID({
         collection: 'versioned',
         id: stale.id,
-        req: await createLocalReq({ user: await harness.userOf(member) }, harness.payload),
+        req: await createPayloadRequest({
+          user: await harness.userOf(member),
+          payload: harness.payload,
+        }),
         overrideAccess: false,
       })
       expectNoURLFields(local.version, 'Local API version by ID')

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLocalReq, type CollectionConfig, type PayloadRequest } from 'payload'
+import { createPayloadRequest, type CollectionConfig, type PayloadRequest } from 'payload'
 import { getPrivateImageURL, getServerImageURL, getSignedURL, getSignedURLs } from '../../index'
 import { pngUpload, startPayload, TEST_CLOUD, type PayloadHarness, type TestUser } from './harness'
 
@@ -222,7 +222,7 @@ describe('server helpers check transformations by default', () => {
 
   describe('getPrivateImageURL takes no caller transformations', () => {
     it('signs no transformation a caller slips into its options', async () => {
-      const req = await createLocalReq({ user: memberUser }, harness.payload)
+      const req = await createPayloadRequest({ user: memberUser, payload: harness.payload })
       const options = {
         payload: harness.payload,
         collection: 'media',

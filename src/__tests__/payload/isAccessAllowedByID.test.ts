@@ -8,7 +8,7 @@ import {
   vi,
   type MockInstance,
 } from 'vitest'
-import { createLocalReq, type CollectionConfig, type PayloadRequest } from 'payload'
+import { createPayloadRequest, type CollectionConfig, type PayloadRequest } from 'payload'
 import { getSignedURL, isAccessAllowed, isAccessAllowedByID } from '../../index'
 import { pngUpload, startPayload, type PayloadHarness, type TestUser } from './harness'
 
@@ -113,7 +113,7 @@ describe('isAccessAllowedByID decides the way the plugin does', () => {
   }
 
   const reqFor = (user?: User, locale?: string) =>
-    createLocalReq({ user, locale: locale as any }, harness.payload)
+    createPayloadRequest({ user, locale: locale as any, payload: harness.payload })
 
   // Every locale a reader can ask for. No locale reads the default one.
   const LOCALES = [undefined, 'en', 'es', 'all']

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   commitTransaction,
-  createLocalReq,
+  createPayloadRequest,
   initTransaction,
   killTransaction,
   type CollectionConfig,
@@ -75,7 +75,7 @@ describe('migratePrivateAssets on a collection with required and localized field
     await harness?.stop()
   })
 
-  const localReq = () => createLocalReq({}, harness.payload)
+  const localReq = () => createPayloadRequest({ payload: harness.payload })
 
   // Writes a 1.2.x private `upload` row straight to the database, then two version rows of it.
   const seed = async (collection: Slug) => {
@@ -96,7 +96,8 @@ describe('migratePrivateAssets on a collection with required and localized field
       url,
       thumbnailURL: `${BASE}/upload/c_fill,w_150,h_150/v${VERSION}/${publicId}.png`,
       cloudinaryUrl: url,
-      originalUrl: url,
+      // A 1.x originalUrl, where 2.0 reads it on SQL
+      original: { url },
     }
     const doc = await harness.payload.db.create({ collection, data, req: await localReq() })
     for (let i = 0; i < 2; i += 1) {
@@ -143,6 +144,7 @@ describe('migratePrivateAssets on a collection with required and localized field
     expect(row?.cloudinaryType).toBe('authenticated')
     expect(row?.cloudinaryPublicId).toBe(doc.publicId)
     for (const field of URL_FIELDS) expect(row?.[field] ?? null, field).toBeNull()
+    expect(row?.original?.url ?? null, 'original.url').toBeNull()
     expect(row?.filename).toBe(doc.data.filename)
     expect(row?.mimeType).toBe('image/png')
     expect(row?.isPrivate).toBe(true)

@@ -64,7 +64,8 @@ export function deliveryTypeOf(value: unknown): CloudinaryDeliveryType {
 /**
  * Every field in which a version of this plugin stored a delivery URL. A private file stores none
  * of them, and migratePrivateAssets clears them from a legacy private row. Keep a field here after
- * the schema drops it: a row from an older version can still hold it.
+ * the schema drops it: a row from an older version can still hold it. `originalUrl` is virtual
+ * since 2.0.0; on the SQL adapters its 1.x value sits in `original.url` (see ORIGINAL_URL_FIELD).
  */
 export const STORED_URL_FIELDS = [
   'url',
@@ -76,6 +77,20 @@ export const STORED_URL_FIELDS = [
   'publicTransformationUrl',
 ] as const
 
+/**
+ * Payload v4's `original` group stores `original.url` in the column 1.x stored `originalUrl` in,
+ * so a legacy row's original URL reads as `original.url` on the SQL adapters.
+ */
+export const ORIGINAL_URL_FIELD = { group: 'original', field: 'url' } as const
+
+/** The stored `original.url` of a row, which holds a 1.x row's `originalUrl` on SQL. */
+export function storedOriginalURL(doc: { original?: unknown }): unknown {
+  const group = doc.original
+  return group && typeof group === 'object'
+    ? (group as Record<string, unknown>)[ORIGINAL_URL_FIELD.field]
+    : undefined
+}
+
 /** The stored fields of a document that the URL builder reads. */
 export interface StoredCloudinaryFields {
   cloudinaryPublicId?: unknown
@@ -84,6 +99,7 @@ export interface StoredCloudinaryFields {
   cloudinaryFormat?: unknown
   cloudinaryType?: unknown
   originalUrl?: unknown
+  original?: unknown
   cloudinaryUrl?: unknown
   isPrivate?: unknown
   requiresSignedURL?: unknown
@@ -155,9 +171,9 @@ function storedDeliveryType(doc: StoredCloudinaryFields): CloudinaryDeliveryType
  * before 1.3.0. Field access strips both URLs from a read, so read them before it runs.
  */
 export function storedURLDeliveryType(
-  doc: StoredCloudinaryFields,
+  doc: StoredCloudinaryFields | Record<string, unknown>,
 ): CloudinaryDeliveryType | undefined {
-  for (const url of [doc.originalUrl, doc.cloudinaryUrl]) {
+  for (const url of [doc.originalUrl, storedOriginalURL(doc), doc.cloudinaryUrl] as unknown[]) {
     const type = typeof url === 'string' ? DELIVERY_TYPE_SEGMENT.exec(url)?.[1] : undefined
     if (type) return deliveryTypeOf(type)
   }

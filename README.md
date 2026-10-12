@@ -1,6 +1,6 @@
 # Payload Storage Cloudinary Plugin
 
-A powerful Cloudinary storage adapter for Payload CMS v3 that replaces local file storage with Cloudinary's cloud-based solution, providing automatic image optimization, transformations, and global CDN delivery.
+A powerful Cloudinary storage adapter for Payload CMS v4 that replaces local file storage with Cloudinary's cloud-based solution, providing automatic image optimization, transformations, and global CDN delivery.
 
 ## Features
 
@@ -14,6 +14,17 @@ A powerful Cloudinary storage adapter for Payload CMS v3 that replaces local fil
 - 🚫 **Smart Re-upload Prevention** - Prevents duplicate uploads when updating document fields
 - 🌍 **Global CDN** - Fast content delivery worldwide
 - 📱 **Responsive Images** - Automatic format and quality optimization
+
+## Compatibility
+
+| Plugin version | Payload | Node.js    |
+| -------------- | ------- | ---------- |
+| 2.x            | v4      | >= 24.15.0 |
+| 1.x            | v3      | >= 18      |
+
+> **Using Payload v3?** This README documents 2.x. Install 1.x (`npm install payload-storage-cloudinary@^1`) and follow the [1.x README](https://www.npmjs.com/package/payload-storage-cloudinary/v/1.3.0) instead.
+
+Upgrading from 1.x? See [Migrating from 1.x](#migrating-from-1x).
 
 ## Installation
 
@@ -35,7 +46,9 @@ CLOUDINARY_API_KEY=your-api-key
 CLOUDINARY_API_SECRET=your-api-secret
 ```
 
-### 2. Configure the plugin
+### 2. Configure the storage adapter
+
+Payload v4 registers storage adapters under the top-level `storage` key, not `plugins`.
 
 ```typescript
 import { buildConfig } from 'payload'
@@ -43,7 +56,7 @@ import { cloudinaryStorage } from 'payload-storage-cloudinary'
 
 export default buildConfig({
   // ... your config
-  plugins: [
+  storage: [
     cloudinaryStorage({
       cloudConfig: {
         cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -80,7 +93,7 @@ const Media: CollectionConfig = {
 When you upload a file, the plugin creates several URL fields:
 
 - **`url`** - The main URL field (always contains the original URL when `preserveOriginal: true`)
-- **`originalUrl`** - Direct URL to the original file without any transformations
+- **`originalUrl`** - Direct URL to the original file without any transformations. Built at read time and not stored (a virtual field since 2.0.0)
 - **`transformedUrl`** - URL with selected transformation presets applied (only when presets are selected)
 - **`thumbnailURL`** - Always a 150x150 thumbnail for admin UI display
 - **`publicTransformationUrl`** - Watermark/blur preview stored by versions before 1.3.0. New uploads don't set it; use `previewUrl`
@@ -293,7 +306,7 @@ export default buildConfig({
       ],
     },
   ],
-  plugins: [
+  storage: [
     cloudinaryStorage({
       cloudConfig: {
         cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
@@ -545,8 +558,9 @@ import type {
 
 ## Requirements
 
-- Payload CMS v3.0.0 or higher
-- Node.js 18 or higher
+- Payload CMS v4 (`payload`, `@payloadcms/ui` and `@payloadcms/plugin-cloud-storage` `^4.0.0-beta.0`). For Payload v3, use 1.x
+- React 19
+- Node.js 24.15.0 or higher
 - Cloudinary account with API credentials
 
 ## License
@@ -564,3 +578,26 @@ MIT
 ## Credits
 
 Built with ❤️ for the Payload CMS community.
+
+## Migrating from 1.x
+
+2.0.0 targets Payload v4. Payload v3 projects should stay on 1.x.
+
+1. **Move the adapter from `plugins` to `storage`** in your Payload config. Payload v4 no longer accepts storage adapters in `plugins`.
+
+   ```diff
+   export default buildConfig({
+   - plugins: [cloudinaryStorage({ ... })],
+   + storage: [cloudinaryStorage({ ... })],
+   })
+   ```
+
+2. **Run a database migration.** Payload v4 adds upload fields to every upload collection (`prefix`, `_objectKey` and an `original` group). On Postgres or SQLite, run `payload migrate:create` and `payload migrate`. The plugin adds no columns of its own in 2.0.0.
+
+3. **`originalUrl` is no longer stored.** Payload v4's `original` group stores `original.url` in the same database column that `originalUrl` used (`original_url` on the SQL adapters), so `originalUrl` is now a virtual field built at read time. Reads still return it for a public file, as before. A row written by 1.x keeps its old value as `original.url`, which the plugin reads to find the delivery type of a record from before 1.3.0. On MongoDB the old `originalUrl` value stays in each document but is no longer read.
+
+4. **Expect new filenames.** Payload v4 stores an uploaded file as `<name>-original.<ext>` and deduplicates filenames across the collection. With `useFilename`, new public IDs therefore end in `-original` (or `-original-1`, and so on), and download names follow the stored filename.
+
+5. **Versioned collections keep replaced files.** Payload v4 versions every collection by default (`versions: true`) and keeps a replaced or deleted file while a version still references it. Set `versions: false` on an upload collection to delete the old Cloudinary asset on replacement and delete, as 1.x did. Restoring a version's file and renaming a file are not supported yet: both need Payload's `copyFile`, which this adapter rejects, and Payload keeps the original file when they fail. When Payload later prunes versions, the plugin can't map their storage keys back to Cloudinary assets and leaves them in place with a warning.
+
+6. **Rows uploaded with 1.x keep working.** They have no `_objectKey`. A replacement or delete removes their Cloudinary asset like any other, unless you set `deleteFromCloudinary: false`.

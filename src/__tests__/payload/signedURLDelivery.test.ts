@@ -9,7 +9,7 @@ import {
   vi,
   type MockInstance,
 } from 'vitest'
-import { createLocalReq, type CollectionConfig } from 'payload'
+import { createPayloadRequest, type CollectionConfig } from 'payload'
 import { pngUpload, startPayload, TEST_CLOUD, type PayloadHarness, type TestUser } from './harness'
 
 const uploadCollection = (slug: string): CollectionConfig => ({
@@ -74,8 +74,9 @@ describe('signed-URL endpoint delivers private files', () => {
     const res = await harness.request(`/api/media/signed-url/${doc.id}?download=true`, { user })
     const body = await res.json()
 
+    // The attachment name is the stored filename, which Payload v4 suffixes with -original
     expect(pathOf(body.downloadUrl)).toMatch(
-      privateURL(doc.cloudinaryPublicId, version, 'fl_attachment:download/'),
+      privateURL(doc.cloudinaryPublicId, version, 'fl_attachment:download-original/'),
     )
   })
 
@@ -124,7 +125,7 @@ describe('signed-URL endpoint delivers private files', () => {
     expect(Object.keys(legacyCall.options).sort()).toEqual(Object.keys(mediaCall.options).sort())
 
     // Reading the stored row is a trusted check, so it skips access on purpose.
-    const req = await createLocalReq({}, harness.payload)
+    const req = await createPayloadRequest({ payload: harness.payload })
     const readLegacy = await harness.payload.findByID({
       collection: 'legacy',
       id: legacyDoc.id,
