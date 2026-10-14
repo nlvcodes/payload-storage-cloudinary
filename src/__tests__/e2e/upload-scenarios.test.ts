@@ -366,6 +366,7 @@ describe('E2E: Upload Scenarios', () => {
         collection: { slug: 'media' } as any,
         file: file as any,
         data: {
+          filename: file.filename,
           cloudinaryFolder: '../../../malicious/path',
         },
         req: {} as any,

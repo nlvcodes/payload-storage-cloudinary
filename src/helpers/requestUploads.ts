@@ -1,6 +1,6 @@
 import type { PayloadRequest } from 'payload'
 import type { CloudinaryDeliveryType } from '../types.js'
-import { deliveryTypeOf } from './deliveryURL.js'
+import { deliveryAssetOf } from './deliveryURL.js'
 
 /**
  * What this request uploaded to, or is about to remove from, Cloudinary, kept on `req.context`.
@@ -23,6 +23,11 @@ export interface UploadedAsset {
   publicId: string
   resourceType: string
   deliveryType: CloudinaryDeliveryType
+  /**
+   * The upload replaced an asset already at this public ID (Cloudinary's `overwritten`), e.g.
+   * another document's file under `useFilename`. Rolling the upload back must not destroy it.
+   */
+  overwritten?: boolean
 }
 
 export type RecordedAsset = UploadedAsset & {
@@ -37,6 +42,8 @@ interface RequestUploads {
   byObjectPath: Map<string, UploadedAsset>
   /** Public IDs this request destroyed, so no other delete path destroys them again. */
   destroyed: Set<string>
+  /** Storage keys of files handleUpload chose not to upload (variants, the `-original`). */
+  skippedKeys: Set<string>
 }
 
 const CONTEXT_KEY = 'cloudinaryRequestUploads'
@@ -50,6 +57,7 @@ const uploadsOf = (req: PayloadRequest): RequestUploads => {
     byStorageKey: new Map(),
     byObjectPath: new Map(),
     destroyed: new Set(),
+    skippedKeys: new Set(),
   }
   req.context[CONTEXT_KEY] = created
   return created
@@ -69,6 +77,14 @@ export const recordUpload = (
   if (storageFilePath) uploads.byStorageKey.set(storageFilePath, asset)
 }
 
+/** Records a file handleUpload did not upload, so rolling it back deletes nothing. */
+export const recordSkippedUpload = (req: PayloadRequest | undefined, storageFilePath?: string) => {
+  if (req && storageFilePath) uploadsOf(req).skippedKeys.add(storageFilePath)
+}
+
+export const wasSkippedUpload = (req: PayloadRequest | undefined, storageFilePath: string) =>
+  Boolean(existingUploads(req)?.skippedKeys.has(storageFilePath))
+
 /** Records the Cloudinary asset of a document whose stored file Payload may now delete by key. */
 export const recordDocumentAsset = (
   req: PayloadRequest | undefined,
@@ -81,11 +97,15 @@ export const recordDocumentAsset = (
     publicId: doc.cloudinaryPublicId,
     resourceType:
       typeof doc.cloudinaryResourceType === 'string' ? doc.cloudinaryResourceType : 'image',
-    deliveryType: deliveryTypeOf(doc.cloudinaryType),
+    // A row from before 1.3.0 has no cloudinaryType; its stored URLs or privacy give the type
+    deliveryType: deliveryAssetOf(doc).deliveryType,
   }
   const uploads = uploadsOf(req)
   const original = doc.original as Record<string, unknown> | undefined
-  const representations: Array<Record<string, unknown> | undefined> = [doc, original]
+  // Variants and the `-original` were never uploaded on their own (see handleUpload), and a row
+  // from 1.x has its sizes' URLs built from the main asset too, so every key maps to it
+  const variants = Object.values((doc.variants ?? doc.sizes ?? {}) as Record<string, unknown>)
+  const representations = [doc, original, ...variants] as Array<Record<string, unknown> | undefined>
   for (const representation of representations) {
     const objectKey = representation?._objectKey
     const filename = representation?.filename

@@ -41,11 +41,10 @@ export const createDeleteHandler =
       }
 
       if (publicId) {
-        await destroyAsset({
-          publicId,
-          resourceType,
-          deliveryType: deliveryAssetOf(docData).deliveryType,
-        })
+        const deliveryType = deliveryAssetOf(docData).deliveryType
+        if (!(await destroyAsset({ publicId, resourceType, deliveryType }))) {
+          req.payload.logger.warn({ msg: notDestroyedMessage(publicId, deliveryType) })
+        }
         markDestroyed(req, publicId)
       }
     } catch (error) {
@@ -57,7 +56,8 @@ export const createDeleteHandler =
 
 /**
  * Deletes an asset and its derived resources. Shared by the document-based `handleDelete` and
- * Payload v4's key-based `deleteFile`.
+ * Payload v4's key-based `deleteFile`. Returns whether Cloudinary destroyed it: it answers
+ * `not found` without throwing, e.g. for the wrong delivery type, which would leave the asset.
  */
 export async function destroyAsset({
   publicId,
@@ -67,13 +67,13 @@ export async function destroyAsset({
   publicId: string
   resourceType: string
   deliveryType: CloudinaryDeliveryType
-}): Promise<void> {
+}): Promise<boolean> {
   // Delete the main asset. destroy defaults to `upload`, so pass the stored type.
-  await cloudinary.uploader.destroy(publicId, {
+  const { result } = (await cloudinary.uploader.destroy(publicId, {
     resource_type: resourceType,
     type: deliveryType,
     invalidate: true, // Invalidate CDN cache
-  })
+  })) as { result?: string }
 
   // Also delete all derived resources (transformations)
   try {
@@ -83,7 +83,13 @@ export async function destroyAsset({
   } catch {
     // It's okay if this fails - not all resources have derived versions
   }
+
+  return result === 'ok'
 }
+
+/** The warning to log when Cloudinary did not destroy an asset. */
+export const notDestroyedMessage = (publicId: string, deliveryType: CloudinaryDeliveryType) =>
+  `[Cloudinary] Cloudinary did not delete "${publicId}" (type ${deliveryType}). Remove it in Cloudinary if it is unused.`
 
 function extractPublicId(urlOrFilename: string): string | null {
   try {

@@ -73,9 +73,19 @@ export function mockCloudinaryApi(): CloudinaryApiMock {
   const failureKey = (method: string, publicId?: string, type?: string) =>
     type ? `${method}:${publicId}:${type}` : `${method}:${publicId}`
   let assetCount = 0
+  // The assets in the mocked account, by `<type>:<public ID>`, so an upload to an existing public
+  // ID reports `overwritten: true` as Cloudinary does.
+  const stored = new Set<string>()
+  const storedKey = (publicId: string, options: Record<string, any>) =>
+    `${options.type ?? 'upload'}:${publicId}`
 
   // The shape of an upload response, limited to the fields the plugin reads.
-  const assetResult = (publicId: string, options: Record<string, any>, bytes = 0) => {
+  const assetResult = (
+    publicId: string,
+    options: Record<string, any>,
+    bytes = 0,
+    overwritten = false,
+  ) => {
     const type: string = options.type ?? 'upload'
     const resourceType: string =
       !options.resource_type || options.resource_type === 'auto' ? 'image' : options.resource_type
@@ -93,6 +103,7 @@ export function mockCloudinaryApi(): CloudinaryApiMock {
       width: 1,
       height: 1,
       ...(options.folder ? { folder: options.folder } : {}),
+      ...(overwritten ? { overwritten: true } : {}),
       // Cloudinary signs the delivery URL of an authenticated upload.
       url: cloudinary.url(publicId, { ...deliveryOptions, sign_url: type === 'authenticated' }),
       secure_url: cloudinary.url(publicId, {
@@ -157,16 +168,18 @@ export function mockCloudinaryApi(): CloudinaryApiMock {
       final(done) {
         const bytes = Buffer.concat(chunks).length
         const publicId = newPublicId(options)
+        const key = storedKey(publicId, options)
         record(
           {
             method: 'upload_stream',
             publicId,
             options,
             bytes,
-            result: assetResult(publicId, options, bytes),
+            result: assetResult(publicId, options, bytes, stored.has(key)),
           },
           callback,
         )
+        stored.add(key)
         done()
       },
     })
@@ -182,10 +195,18 @@ export function mockCloudinaryApi(): CloudinaryApiMock {
       const callback =
         typeof optionsOrCallback === 'function' ? (optionsOrCallback as Callback) : maybeCallback
       const publicId = newPublicId(options)
-      return record(
-        { method: 'upload', publicId, options, result: assetResult(publicId, options) },
+      const key = storedKey(publicId, options)
+      const result = record(
+        {
+          method: 'upload',
+          publicId,
+          options,
+          result: assetResult(publicId, options, 0, stored.has(key)),
+        },
         callback,
       )
+      stored.add(key)
+      return result
     },
     rename: async (
       from: string,
@@ -204,8 +225,14 @@ export function mockCloudinaryApi(): CloudinaryApiMock {
         callback,
       )
     },
-    destroy: async (publicId: string, options: Record<string, any> = {}, callback?: Callback) =>
-      record({ method: 'destroy', publicId, options, result: { result: 'ok' } }, callback),
+    destroy: async (publicId: string, options: Record<string, any> = {}, callback?: Callback) => {
+      const result = record(
+        { method: 'destroy', publicId, options, result: { result: 'ok' } },
+        callback,
+      )
+      stored.delete(storedKey(publicId, options))
+      return result
+    },
     explicit: async (publicId: string, options: Record<string, any> = {}, callback?: Callback) =>
       record(
         { method: 'explicit', publicId, options, result: assetResult(publicId, options) },

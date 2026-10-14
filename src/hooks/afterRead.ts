@@ -10,6 +10,7 @@ import { PLUGIN_FIELDS, pluginFieldNames } from '../helpers/pluginFields.js'
 import { isDocumentID, readStoredDocument, readStoredVersion } from '../helpers/storedDocument.js'
 import {
   buildDeliveryURL,
+  clearOriginalURL,
   deliveryAssetOf,
   isPrivateFile,
   storedURLDeliveryType,
@@ -28,10 +29,10 @@ import {
  * stored asset fields and the access rule.
  *
  * On every Cloudinary collection it drops the stored `cloudinaryUrl`, which no read returns, and
- * sets `originalUrl` fresh for a public file. A private document never returns `originalUrl`: a
- * reader with the original gets it through `url` or the signed-URL endpoint. Field access hides
- * both stored URLs too, but the Local API skips field access by default, so this hook is what
- * keeps them out of every read.
+ * sets `originalUrl` fresh for a public file. A private document never returns `originalUrl` or
+ * `original.url`: a reader with the original gets it through `url` or the signed-URL endpoint.
+ * Field access hides both stored URLs too, but the Local API skips field access by default, so
+ * this hook is what keeps them out of every read.
  *
  * On a `privateFiles` collection it also sets `url`, `thumbnailURL`, `transformedUrl` and
  * `previewUrl`, and nulls the ones the reader may not have. On a collection with preset
@@ -87,6 +88,7 @@ export const createAfterReadHook =
     delete doc.cloudinaryUrl
     if (isPrivate) {
       delete doc.originalUrl
+      clearOriginalURL(doc)
     } else {
       doc.originalUrl = buildDeliveryURL(asset)
     }
@@ -222,6 +224,7 @@ function withholdURLs(
       doc[name] = null
     }
   }
+  clearOriginalURL(doc)
   return doc
 }
 

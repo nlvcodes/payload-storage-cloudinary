@@ -8,7 +8,7 @@ import type {
 } from '../types.js'
 import { v2 as cloudinary } from 'cloudinary'
 import { queueManager } from '../queue/queueManager.js'
-import { recordUpload, updateTargetOf } from '../helpers/requestUploads.js'
+import { recordSkippedUpload, recordUpload, updateTargetOf } from '../helpers/requestUploads.js'
 import { generatePrivateUploadOptions } from '../helpers/signedURLs.js'
 import { storedLocale } from '../helpers/storedDocument.js'
 import {
@@ -54,16 +54,19 @@ export const createUploadHandler =
       throw new Error('No file buffer provided for upload')
     }
 
-    // Payload also passes each generated image size as its own file, and merges every
-    // returned object into the document (last one wins). Only the main file may write the
-    // Cloudinary fields, or a size would overwrite them.
+    // Payload also passes each image variant, and the untransformed `-original` when a
+    // transformer changed the file, as its own file. Their URLs are built from the main asset
+    // (Cloudinary transforms on delivery), so uploading them would only leave assets that nothing
+    // references or deletes. Only the main file is uploaded.
     const isMainFile = file.filename === data?.filename
+    if (!isMainFile) {
+      recordSkippedUpload(req, storageFilePath)
+      return {}
+    }
 
     // A replacement uploads with the document's current privacy and folder. Payload v4 deletes
     // the old asset after this upload; see the delete handler's same-public-ID guard.
-    const settings = isMainFile
-      ? await withStoredSettings(req, collection.slug, config, data)
-      : data
+    const settings = await withStoredSettings(req, collection.slug, config, data)
 
     try {
       const uploadOptions = buildUploadOptions(config, file.filename, settings, file.mimeType)
@@ -100,12 +103,13 @@ export const createUploadHandler =
               publicId: result.public_id,
               resourceType: result.resource_type || 'image',
               deliveryType: deliveryTypeOf(result.type),
+              overwritten: result.overwritten === true,
             },
             storageFilePath,
           )
         }
 
-        return isMainFile ? processUploadResult(result, settings, file, config) : {}
+        return processUploadResult(result, settings, file, config)
       }
 
       // Regular upload (non-queued)
@@ -197,12 +201,13 @@ export const createUploadHandler =
             publicId: result.public_id,
             resourceType: result.resource_type || 'image',
             deliveryType: deliveryTypeOf(result.type),
+            overwritten: result.overwritten === true,
           },
           storageFilePath,
         )
       }
 
-      return isMainFile ? processUploadResult(result, settings, file, config) : {}
+      return processUploadResult(result, settings, file, config)
     } catch (error) {
       throw new Error(
         `Failed to upload to Cloudinary: ${error instanceof Error ? error.message : 'Unknown error'}`,

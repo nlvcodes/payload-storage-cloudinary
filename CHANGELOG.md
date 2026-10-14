@@ -7,14 +7,19 @@ All notable changes to this project will be documented in this file.
 Payload v4 support. Payload v3 projects should stay on 1.x. The README's [Migrating from 1.x](./README.md#migrating-from-1x) section has the upgrade steps.
 
 ### Changed
-- **BREAKING**: requires Payload v4 (`payload`, `@payloadcms/ui` and `@payloadcms/plugin-cloud-storage` `^4.0.0-beta.0`), React 19 and Node.js >= 24.15.0
+- **BREAKING**: requires Payload v4 (peers `payload` and `@payloadcms/ui` `^4.0.0-beta.0`), React 19 and Node.js >= 24.15.0. The `@payloadcms/plugin-cloud-storage` dependency is pinned to the matching Payload beta, since `^4.0.0-beta.0` also matches Payload's `4.0.0-internal.*` builds
 - **BREAKING**: `cloudinaryStorage()` returns a Payload `StorageAdapter` (`{ name, collections, init }`). Register it under `storage` in the Payload config, not `plugins`
 - **BREAKING**: `originalUrl` is a virtual field, built at read time and no longer stored. Payload v4's `original` group stores `original.url` in the column it used (`original_url` on Postgres and SQLite). A 1.x row's value now reads as `original.url`, and the plugin reads it from there to find a legacy record's delivery type
+- **BREAKING**: a collection configured as `true` deletes its assets from Cloudinary on delete and replacement, the documented `deleteFromCloudinary` default. 1.x never deleted them. Use `{ deleteFromCloudinary: false }` to keep them
 - **BREAKING**: with `useFilename`, public IDs end in `-original`, because Payload v4 stores an uploaded file as `<name>-original.<ext>`
 - `handleUpload` returns only the Cloudinary metadata it sets, and leaves `data` untouched. Payload v4 persists the returned object
 - A replacement that sends only a file uploads with the document's stored privacy and dynamic folder. Payload v4 stages the file before the document hooks run, with the request's data only, so the plugin records the target document of an update and reads its settings
 - `generateURL` returns `null` for a private file, which Payload v4 stores through the URL fields' `beforeChange` hooks, so a private file keeps `null` in every stored URL field
-- `migratePrivateAssets` also clears `original.url` on a private row
+- `migratePrivateAssets` also clears `original.url` on a private row. Run it on 1.x before upgrading
+- A private file never returns `original.url`, so a 1.x row's stored `originalUrl` is never handed out
+- Only the main file uploads to Cloudinary. Image variants and the untransformed `-original` are delivered from it, so they no longer leave unreferenced assets
+- Deleting a row from before 1.3.0 uses the delivery type from its stored URLs or privacy, and a delete that Cloudinary doesn't perform logs a warning
+- Rolling back a failed upload keeps an asset the upload overwrote (Cloudinary's `overwritten`), such as another document's file under `useFilename`
 - The `forceSelect` the plugin set on every Cloudinary collection is now a `select` function with the same effect, since Payload v4 replaced `forceSelect`
 
 ### Added

@@ -583,7 +583,9 @@ Built with ❤️ for the Payload CMS community.
 
 2.0.0 targets Payload v4. Payload v3 projects should stay on 1.x.
 
-1. **Move the adapter from `plugins` to `storage`** in your Payload config. Payload v4 no longer accepts storage adapters in `plugins`.
+1. **Run `migratePrivateAssets` on 1.x first** if any collection has `privateFiles`. On the SQL adapters a private row from before 1.3.0 keeps its permanent `upload` URL in the column 2.0.0 reads as `original.url`. 2.0.0 never returns it, but the migration moves the asset to `authenticated` and clears the stored URL, so nothing deliverable stays in the database.
+
+2. **Move the adapter from `plugins` to `storage`** in your Payload config. Payload v4 no longer accepts storage adapters in `plugins`.
 
    ```diff
    export default buildConfig({
@@ -592,12 +594,16 @@ Built with ❤️ for the Payload CMS community.
    })
    ```
 
-2. **Run a database migration.** Payload v4 adds upload fields to every upload collection (`prefix`, `_objectKey` and an `original` group). On Postgres or SQLite, run `payload migrate:create` and `payload migrate`. The plugin adds no columns of its own in 2.0.0.
+3. **Run a database migration.** Payload v4 adds upload fields to every upload collection (`prefix`, `_objectKey` and an `original` group). On Postgres or SQLite, run `payload migrate:create` and `payload migrate`. The plugin adds no columns of its own in 2.0.0.
 
-3. **`originalUrl` is no longer stored.** Payload v4's `original` group stores `original.url` in the same database column that `originalUrl` used (`original_url` on the SQL adapters), so `originalUrl` is now a virtual field built at read time. Reads still return it for a public file, as before. A row written by 1.x keeps its old value as `original.url`, which the plugin reads to find the delivery type of a record from before 1.3.0. On MongoDB the old `originalUrl` value stays in each document but is no longer read.
+4. **`originalUrl` is no longer stored.** Payload v4's `original` group stores `original.url` in the same database column that `originalUrl` used (`original_url` on the SQL adapters), so `originalUrl` is now a virtual field built at read time. Reads still return it for a public file, as before. A row written by 1.x keeps its old value as `original.url`, which the plugin reads to find the delivery type of a record from before 1.3.0. On MongoDB the old `originalUrl` value stays in each document but is no longer read.
 
-4. **Expect new filenames.** Payload v4 stores an uploaded file as `<name>-original.<ext>` and deduplicates filenames across the collection. With `useFilename`, new public IDs therefore end in `-original` (or `-original-1`, and so on), and download names follow the stored filename.
+5. **Expect new filenames.** Payload v4 stores an uploaded file as `<name>-original.<ext>` and deduplicates filenames across the collection. With `useFilename`, new public IDs therefore end in `-original` (or `-original-1`, and so on), and download names follow the stored filename.
 
-5. **Versioned collections keep replaced files.** Payload v4 versions every collection by default (`versions: true`) and keeps a replaced or deleted file while a version still references it. Set `versions: false` on an upload collection to delete the old Cloudinary asset on replacement and delete, as 1.x did. Restoring a version's file and renaming a file are not supported yet: both need Payload's `copyFile`, which this adapter rejects, and Payload keeps the original file when they fail. When Payload later prunes versions, the plugin can't map their storage keys back to Cloudinary assets and leaves them in place with a warning.
+6. **Versioned collections keep replaced files.** Payload v4 versions every collection by default (`versions: true`) and keeps a replaced or deleted file while a version still references it. Set `versions: false` on an upload collection to delete the old Cloudinary asset on replacement and delete, as 1.x did. Restoring a version's file and renaming a file are not supported yet: both need Payload's `copyFile`, which this adapter rejects, and Payload keeps the original file when they fail. When Payload later prunes versions, the plugin can't map their storage keys back to Cloudinary assets and leaves them in place with a warning.
 
-6. **Rows uploaded with 1.x keep working.** They have no `_objectKey`. A replacement or delete removes their Cloudinary asset like any other, unless you set `deleteFromCloudinary: false`.
+7. **Rows uploaded with 1.x keep working.** They have no `_objectKey`. A replacement or delete removes their Cloudinary asset like any other, unless you set `deleteFromCloudinary: false`.
+
+8. **`media: true` now deletes from Cloudinary.** In 1.x a collection configured as `true` never deleted its assets. 2.0.0 applies the documented `deleteFromCloudinary: true` default to it, so deleting or replacing a document deletes its Cloudinary asset. Configure the collection as `{ deleteFromCloudinary: false }` to keep the 1.x behaviour.
+
+9. **Image variants are not uploaded separately.** Payload v4 hands the adapter each image variant, and the untransformed `-original` when a transformer changed the file. Their URLs are built from the main asset with Cloudinary transformations, so the plugin uploads only the main file.

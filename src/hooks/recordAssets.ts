@@ -12,7 +12,7 @@ import {
   wasUploadedInRequest,
 } from '../helpers/requestUploads.js'
 import { deliveryAssetOf } from '../helpers/deliveryURL.js'
-import { destroyAsset } from '../handlers/handleDelete.js'
+import { destroyAsset, notDestroyedMessage } from '../handlers/handleDelete.js'
 import type { CloudinaryStorageOptions } from '../types.js'
 import { isDocumentID } from '../helpers/storedDocument.js'
 
@@ -63,11 +63,14 @@ async function destroyReplacedPreV4Asset(
 
   const stored = deliveryAssetOf(previousDoc)
   try {
-    await destroyAsset({
+    const destroyed = await destroyAsset({
       publicId: oldId,
       resourceType: stored.resourceType || 'image',
       deliveryType: stored.deliveryType,
     })
+    if (!destroyed) {
+      req.payload.logger.warn({ msg: notDestroyedMessage(oldId, stored.deliveryType) })
+    }
     markDestroyed(req, oldId)
   } catch (error) {
     req.payload.logger.error({

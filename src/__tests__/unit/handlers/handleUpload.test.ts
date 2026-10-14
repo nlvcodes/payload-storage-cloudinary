@@ -193,7 +193,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(optionsWithDynamicFolder)
       const file = mockFile()
-      const data = { cloudinaryFolder: 'custom-folder' }
+      const data = { filename: file.filename, cloudinaryFolder: 'custom-folder' }
 
       await handler({ collection: mockCollection as any, file, data })
 
@@ -288,6 +288,8 @@ describe('handleUpload', () => {
       } as any)
 
       expect(result).toEqual({})
+      // A variant is delivered from the main asset, so it is never uploaded
+      expect(cloudinary.uploader.upload_stream).not.toHaveBeenCalled()
     })
 
     it('should throw when the file has neither a buffer nor a temp file', async () => {
@@ -394,7 +396,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(optionsWithDynamicFolder)
       const file = mockFile()
-      const data = { cloudinaryFolder: '../../etc/passwd' }
+      const data = { filename: file.filename, cloudinaryFolder: '../../etc/passwd' }
 
       await handler({ collection: mockCollection as any, file, data })
 
@@ -436,7 +438,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(optionsWithDynamicFolder)
       const file = mockFile()
-      const data = { cloudinaryFolder: 'folder//subfolder' }
+      const data = { filename: file.filename, cloudinaryFolder: 'folder//subfolder' }
 
       await handler({ collection: mockCollection as any, file, data })
 
@@ -477,7 +479,7 @@ describe('handleUpload', () => {
 
       const handler = createUploadHandler(optionsWithDynamicFolder)
       const file = mockFile()
-      const data = { cloudinaryFolder: 'products/2024' }
+      const data = { filename: file.filename, cloudinaryFolder: 'products/2024' }
 
       await handler({ collection: mockCollection as any, file, data })
 

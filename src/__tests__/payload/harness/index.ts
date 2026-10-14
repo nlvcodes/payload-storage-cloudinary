@@ -49,6 +49,8 @@ export type StartOptions = {
   transactionOptions?: SQLiteAdapterArgs['transactionOptions']
   /** Payload's `localization` option. Off by default. */
   localization?: Config['localization']
+  /** Payload's `upload` option, for transformers. Off by default. */
+  upload?: Config['upload']
 }
 
 export type TestUser = { id: number | string; email: string; token: string }
@@ -102,6 +104,7 @@ export async function startPayload(options: StartOptions = {}): Promise<PayloadH
       }),
       collections: [users, ...(options.collections ?? [media])],
       localization: options.localization,
+      upload: options.upload,
       storage: [
         cloudinaryStorage({
           cloudConfig: TEST_CLOUD,

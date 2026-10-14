@@ -91,6 +91,17 @@ export function storedOriginalURL(doc: { original?: unknown }): unknown {
     : undefined
 }
 
+/**
+ * Nulls a document's `original.url`, when it has the group. A private file hands out no stored
+ * URL, and on SQL a 1.x row's permanent `originalUrl` reads as `original.url`.
+ */
+export function clearOriginalURL(doc: Record<string, unknown>): void {
+  const group = doc[ORIGINAL_URL_FIELD.group]
+  if (group && typeof group === 'object') {
+    ;(group as Record<string, unknown>)[ORIGINAL_URL_FIELD.field] = null
+  }
+}
+
 /** The stored fields of a document that the URL builder reads. */
 export interface StoredCloudinaryFields {
   cloudinaryPublicId?: unknown

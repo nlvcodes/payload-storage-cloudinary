@@ -68,7 +68,7 @@ The plugin follows Payload's cloud storage adapter pattern, built on top of `@pa
 
 ### Testing Environment
 
-The `dev/` folder contains a Next.js + Payload v3 test application configured to use the plugin. It includes:
+The `dev/` folder contains a Next.js + Payload test application configured to use the plugin. It is still on Payload v3 and has not been ported to v4 yet. It includes:
 - A `media` collection configured for Cloudinary uploads
 - A `products` collection with upload fields for testing relationships
 

@@ -1,9 +1,10 @@
 import type { CopyFile, DeleteFile } from '@payloadcms/plugin-cloud-storage/types'
-import { destroyAsset } from './handleDelete.js'
+import { destroyAsset, notDestroyedMessage } from './handleDelete.js'
 import {
   markDestroyed,
   recordedAssetFor,
   wasDestroyed,
+  wasSkippedUpload,
   wasUploadedInRequest,
 } from '../helpers/requestUploads.js'
 import type { CloudinaryStorageOptions } from '../types.js'
@@ -16,9 +17,9 @@ import type { CloudinaryStorageOptions } from '../types.js'
  *
  * - `deleteFile` destroys a recorded asset. A file this request uploaded is Payload rolling back
  *   a failed upload; it was never attached to a saved document, so it is deleted even when the
- *   collection sets `deleteFromCloudinary: false`. A deleted or replaced document's file follows
- *   `deleteFromCloudinary`, and is kept when this request just uploaded the same public ID. An
- *   unrecorded key (e.g. version pruning on a versioned collection) is left alone with a warning
+ *   collection sets `deleteFromCloudinary: false`, unless it overwrote an existing asset. A
+ *   deleted or replaced document's file follows `deleteFromCloudinary`, and is kept when this
+ *   request just uploaded the same public ID. An unrecorded key (e.g. version pruning on a versioned collection) is left alone with a warning
  *   rather than risk deleting the wrong asset.
  * - `copyFile` backs Payload's file versioning (restoring a version's file) and file rename. It
  *   is not supported yet and rejects; Payload keeps the original file when a rename fails.
@@ -28,6 +29,9 @@ import type { CloudinaryStorageOptions } from '../types.js'
 export const createDeleteFile =
   (options: CloudinaryStorageOptions): DeleteFile =>
   async ({ collection, req, storageFilePath }) => {
+    // A variant or `-original` handleUpload never uploaded: nothing to roll back
+    if (wasSkippedUpload(req, storageFilePath)) return
+
     const asset = recordedAssetFor(req, storageFilePath)
 
     if (!asset) {
@@ -42,6 +46,15 @@ export const createDeleteFile =
       return
     }
 
+    // Payload is rolling back an upload that replaced an asset already at that public ID, which
+    // another document may still use: keep it
+    if (asset.source === 'upload' && asset.overwritten) {
+      req.payload.logger.warn({
+        msg: `[Cloudinary] Not deleting "${asset.publicId}" while rolling back a failed upload: the upload overwrote an existing asset at that public ID, which another document may use.`,
+      })
+      return
+    }
+
     if (asset.source === 'document') {
       const collectionConfig = options.collections[collection.slug]
       const keep =
@@ -51,7 +64,9 @@ export const createDeleteFile =
       }
     }
 
-    await destroyAsset(asset)
+    if (!(await destroyAsset(asset))) {
+      req.payload.logger.warn({ msg: notDestroyedMessage(asset.publicId, asset.deliveryType) })
+    }
     markDestroyed(req, asset.publicId)
   }
 
