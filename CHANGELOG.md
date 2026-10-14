@@ -17,7 +17,7 @@ Payload v4 support. Payload v3 projects should stay on 1.x. The README's [Migrat
 - `generateURL` returns `null` for a private file, which Payload v4 stores through the URL fields' `beforeChange` hooks, so a private file keeps `null` in every stored URL field
 - `migratePrivateAssets` also clears `original.url` on a private row. Run it on 1.x before upgrading
 - A private file never returns `original.url`, so a 1.x row's stored `originalUrl` is never handed out
-- Only the main file uploads to Cloudinary. Image variants and the untransformed `-original` are delivered from it, so they no longer leave unreferenced assets
+- Only the main file uploads to Cloudinary, so image variants and the untransformed `-original` no longer leave unreferenced assets. When a transformer changes a file, the untransformed original is not kept in Cloudinary. `original.url` and every `variants.*.url` serve the main asset at full size (with only the default transformation), as in 1.x
 - Deleting a row from before 1.3.0 uses the delivery type from its stored URLs or privacy, and a delete that Cloudinary doesn't perform logs a warning
 - Rolling back a failed upload keeps an asset the upload overwrote (Cloudinary's `overwritten`), such as another document's file under `useFilename`
 - The `forceSelect` the plugin set on every Cloudinary collection is now a `select` function with the same effect, since Payload v4 replaced `forceSelect`

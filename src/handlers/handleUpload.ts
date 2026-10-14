@@ -55,9 +55,9 @@ export const createUploadHandler =
     }
 
     // Payload also passes each image variant, and the untransformed `-original` when a
-    // transformer changed the file, as its own file. Their URLs are built from the main asset
-    // (Cloudinary transforms on delivery), so uploading them would only leave assets that nothing
-    // references or deletes. Only the main file is uploaded.
+    // transformer changed the file, as its own file. generateURL builds their URLs from the main
+    // asset, so uploading them would only leave assets that nothing references or deletes. Only
+    // the main file is uploaded.
     const isMainFile = file.filename === data?.filename
     if (!isMainFile) {
       recordSkippedUpload(req, storageFilePath)
