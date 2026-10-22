@@ -58,7 +58,7 @@ describe('E2E: Upload Scenarios', () => {
       const result = await handler({
         collection: { slug: 'media' } as any,
         file: file as any,
-        data: {},
+        data: { filename: file.filename },
         req: {} as any,
       })
 
@@ -106,7 +106,7 @@ describe('E2E: Upload Scenarios', () => {
       const result = await handler({
         collection: { slug: 'media' } as any,
         file: file as any,
-        data: { transformationPreset: 'hero' },
+        data: { filename: file.filename, transformationPreset: 'hero' },
         req: {} as any,
       })
 
@@ -161,7 +161,7 @@ describe('E2E: Upload Scenarios', () => {
       const result = await handler({
         collection: { slug: 'videos' } as any,
         file: file as any,
-        data: {},
+        data: { filename: file.filename },
         req: {} as any,
       })
 
@@ -220,7 +220,7 @@ describe('E2E: Upload Scenarios', () => {
       await handler({
         collection: { slug: 'videos' } as any,
         file: file as any,
-        data: {},
+        data: { filename: file.filename },
         req: {} as any,
       })
 
@@ -265,7 +265,7 @@ describe('E2E: Upload Scenarios', () => {
       const result = await handler({
         collection: { slug: 'documents' } as any,
         file: file as any,
-        data: {},
+        data: { filename: file.filename },
         req: {} as any,
       })
 
@@ -319,6 +319,7 @@ describe('E2E: Upload Scenarios', () => {
         collection: { slug: 'media' } as any,
         file: file as any,
         data: {
+          filename: file.filename,
           cloudinaryFolder: 'projects/2024/summer',
         },
         req: {} as any,
@@ -365,6 +366,7 @@ describe('E2E: Upload Scenarios', () => {
         collection: { slug: 'media' } as any,
         file: file as any,
         data: {
+          filename: file.filename,
           cloudinaryFolder: '../../../malicious/path',
         },
         req: {} as any,
@@ -401,7 +403,7 @@ describe('E2E: Upload Scenarios', () => {
         handler({
           collection: { slug: 'media' } as any,
           file: file as any,
-          data: {},
+          data: { filename: file.filename },
           req: {} as any,
         }),
       ).rejects.toThrow('Failed to upload to Cloudinary: Network error')
@@ -428,7 +430,7 @@ describe('E2E: Upload Scenarios', () => {
         handler({
           collection: { slug: 'media' } as any,
           file: file as any,
-          data: {},
+          data: { filename: file.filename },
           req: {} as any,
         }),
       ).rejects.toThrow('quota')

@@ -129,7 +129,11 @@ describe('signed-URL endpoints and the preset read path enforce access', () => {
     it('returns no URLs to an anonymous caller walking IDs 1..n', async () => {
       for (let i = 0; i < 3; i++) await upload('media', admin, { owner: admin.id })
       // Counts rows as a trusted test fixture, so it skips access on purpose and needs no `req`.
-      const { totalDocs } = await harness.payload.find({ collection: 'media', limit: 0 })
+      const { totalDocs } = await harness.payload.find({
+        collection: 'media',
+        limit: 0,
+        overrideAccess: true,
+      })
 
       for (let id = 1; id <= totalDocs + 2; id++) {
         const res = await signedURL('media', id)
@@ -228,7 +232,11 @@ describe('signed-URL endpoints and the preset read path enforce access', () => {
 
     it('returns no URLs to an anonymous caller asking for IDs 1..n', async () => {
       // Counts rows as a trusted test fixture, so it skips access on purpose and needs no `req`.
-      const { totalDocs } = await harness.payload.find({ collection: 'media', limit: 0 })
+      const { totalDocs } = await harness.payload.find({
+        collection: 'media',
+        limit: 0,
+        overrideAccess: true,
+      })
       const ids = Array.from({ length: totalDocs + 2 }, (_, i) => i + 1)
 
       const res = await batch('media', ids)

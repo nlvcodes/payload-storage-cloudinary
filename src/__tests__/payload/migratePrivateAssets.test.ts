@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { createLocalReq, type CollectionConfig } from 'payload'
+import { createPayloadRequest, type CollectionConfig } from 'payload'
 import { migratePrivateAssets } from '../../index'
 import { startPayload, TEST_CLOUD, type CloudinaryCall, type PayloadHarness } from './harness'
 
@@ -69,14 +69,15 @@ const uploadURLs = (publicId: string) => ({
   url: `${BASE}/upload/v${VERSION}/${publicId}.png`,
   thumbnailURL: `${BASE}/upload/c_fill,w_150,h_150/v${VERSION}/${publicId}.png`,
   cloudinaryUrl: `${BASE}/upload/v${VERSION}/${publicId}.png`,
-  originalUrl: `${BASE}/upload/v${VERSION}/${publicId}.png`,
+  // A 1.x originalUrl: Payload v4's original.url uses its column, so 2.0 reads it there
+  original: { url: `${BASE}/upload/v${VERSION}/${publicId}.png` },
 })
 
 const authenticatedURLs = (publicId: string) => ({
   url: `${BASE}/authenticated/s--AbCdEfGh--/v${VERSION}/${publicId}.png`,
   thumbnailURL: `${BASE}/authenticated/s--IjKlMnOp--/c_fill,w_150,h_150/v${VERSION}/${publicId}.png`,
   cloudinaryUrl: `${BASE}/authenticated/s--AbCdEfGh--/v${VERSION}/${publicId}.png`,
-  originalUrl: `${BASE}/authenticated/s--AbCdEfGh--/v${VERSION}/${publicId}.png`,
+  original: { url: `${BASE}/authenticated/s--AbCdEfGh--/v${VERSION}/${publicId}.png` },
 })
 
 // The rows a 1.2.x database holds, one per kind of document the migration meets.
@@ -139,7 +140,7 @@ describe('migratePrivateAssets', () => {
     await harness?.stop()
   })
 
-  const localReq = () => createLocalReq({}, harness.payload)
+  const localReq = () => createPayloadRequest({ payload: harness.payload })
 
   // Writes a row straight to the database, the way 1.2.x left it, without hooks or Cloudinary.
   const seed = async (collection: Slug, kind: LegacyKind) => {
@@ -302,6 +303,7 @@ describe('migratePrivateAssets', () => {
       expect(row.cloudinaryType).toBe('authenticated')
       expect(row.cloudinaryPublicId).toBe(docOf().publicId)
       for (const field of URL_FIELDS) expect(row[field] ?? null, field).toBeNull()
+      expect(row.original?.url ?? null, 'original.url').toBeNull()
     })
 
     it('lists the public watermarked copy the old publicTransformation path left, and keeps it', () => {
@@ -431,6 +433,7 @@ describe('migratePrivateAssets', () => {
     const [row] = await storedRows('recovered')
     expect(row.cloudinaryType).toBe('authenticated')
     for (const field of URL_FIELDS) expect(row[field] ?? null, field).toBeNull()
+    expect(row.original?.url ?? null, 'original.url').toBeNull()
   })
 
   it('does not recover a document when an upload asset shares its public ID', async () => {
@@ -523,6 +526,7 @@ describe('migratePrivateAssets', () => {
     const [row] = await storedRows('unflagged')
     expect(row.cloudinaryType).toBe('authenticated')
     for (const field of URL_FIELDS) expect(row[field] ?? null, field).toBeNull()
+    expect(row.original?.url ?? null, 'original.url').toBeNull()
   })
 
   it('names a public copy from its stored public ID first, then from the naming rule', async () => {
@@ -593,12 +597,14 @@ describe('migratePrivateAssets', () => {
         expect(version.cloudinaryPublicId).toBe(doc.publicId)
         expect(version.filename).toBe(doc.data.filename)
         for (const field of URL_FIELDS) expect(version[field] ?? null, field).toBeNull()
+        expect(version.original?.url ?? null, 'original.url').toBeNull()
       }
       // A version of another asset keeps its asset, records the type its stored URLs show, and
       // loses those URLs. Without the type, the read path would take it for authenticated.
       expect(replaced.cloudinaryPublicId).toBe('originals/replaced')
       expect(replaced.cloudinaryType).toBe('upload')
       for (const field of URL_FIELDS) expect(replaced[field] ?? null, field).toBeNull()
+      expect(replaced.original?.url ?? null, 'original.url').toBeNull()
     })
 
     it('serves a migrated draft through a signed authenticated URL', async () => {
@@ -623,7 +629,7 @@ describe('migratePrivateAssets', () => {
         collection: 'readableDrafts',
         id: doc.id,
         draft: true,
-        req: await createLocalReq({ user }, harness.payload),
+        req: await createPayloadRequest({ user, payload: harness.payload }),
         overrideAccess: false,
       })
 

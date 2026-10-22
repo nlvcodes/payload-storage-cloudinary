@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { APIError, createLocalReq, type CollectionConfig } from 'payload'
+import { APIError, createPayloadRequest, type CollectionConfig } from 'payload'
 import { migratePrivateAssets } from '../../index'
 import { STORED_URL_FIELDS } from '../../helpers/deliveryURL'
 import { pngUpload, startPayload, type PayloadHarness, type TestUser } from './harness'
@@ -179,7 +179,7 @@ describe('privacy and folder changes keep the asset and the row in step', () => 
     // The migration finds nothing to do for the moved file.
     const report = await migratePrivateAssets({
       payload: harness.payload,
-      req: await createLocalReq({}, harness.payload),
+      req: await createPayloadRequest({ payload: harness.payload }),
       collection: 'folders',
       dryRun: true,
     })

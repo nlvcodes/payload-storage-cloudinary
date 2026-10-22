@@ -1,4 +1,5 @@
 import type { HandleUpload } from '@payloadcms/plugin-cloud-storage/types'
+import type { FileData, PayloadRequest, TypeWithID } from 'payload'
 import type {
   CloudinaryStorageOptions,
   CloudinaryCollectionConfig,
@@ -7,7 +8,9 @@ import type {
 } from '../types.js'
 import { v2 as cloudinary } from 'cloudinary'
 import { queueManager } from '../queue/queueManager.js'
+import { recordSkippedUpload, recordUpload, updateTargetOf } from '../helpers/requestUploads.js'
 import { generatePrivateUploadOptions } from '../helpers/signedURLs.js'
+import { storedLocale } from '../helpers/storedDocument.js'
 import {
   buildDeliveryURL,
   deliveryTypeOf,
@@ -26,19 +29,11 @@ import {
 export const createUploadHandler =
   (options: CloudinaryStorageOptions): HandleUpload =>
   async (uploadArgs) => {
-    const { collection, file, data } = uploadArgs
-    // Support newer plugin-cloud-storage versions (3.70.0+) that pass req and clientUploadContext
-    const clientUploadContext = (uploadArgs as any).clientUploadContext
-
-    // If clientUploadContext is present, the client already uploaded — skip re-upload
-    if (clientUploadContext) {
-      return data
-    }
-
-    // Note: Payload's cloud storage plugin architecture calls this handler in two scenarios:
-    // 1. When a new file is uploaded (file.buffer is present)
-    // 2. Sometimes during updates even when no new file is selected (this seems to be a Payload behavior)
-    // We handle both cases appropriately below
+    // Payload v4 calls this from the cloud storage plugin's afterChange hook, only for files
+    // actually being uploaded in this request (files the client already uploaded are filtered
+    // out upstream). `data` is a copy of the saved document: anything this handler wants
+    // persisted must be returned, and Payload writes it back with a follow-up update.
+    const { collection, file, data, req, storageFilePath } = uploadArgs
 
     const collectionConfig = options.collections[collection.slug]
 
@@ -49,39 +44,35 @@ export const createUploadHandler =
     const rawConfig = typeof collectionConfig === 'boolean' ? {} : collectionConfig
     const config = normalizeCollectionConfig(rawConfig)
 
-    // Payload should only call this handler when there's a new file to upload
+    // With `upload.useTempFiles`, Payload hands over a temp file path instead of a buffer
+    if (!file.buffer && file.tempFilePath) {
+      const { readFile } = await import('fs/promises')
+      file.buffer = await readFile(file.tempFilePath)
+    }
+
     if (!file.buffer) {
-      // If we have an existing cloudinaryPublicId but no file buffer, this is likely an update without a new file
-      // In this case, we should not re-upload to Cloudinary
-      if (data?.cloudinaryPublicId) {
-        // Ensure required fields are present to prevent fetch attempts
-        if (!data.url && data.cloudinaryUrl && data.isPrivate !== true) {
-          data.url = data.cloudinaryUrl
-        }
-
-        // Preserve existing metadata
-        data.filename = data.filename || file.filename
-        data.filesize = data.filesize || file.filesize
-        data.mimeType = data.mimeType || file.mimeType
-
-        return data // Return early without modifying the data
-      }
       throw new Error('No file buffer provided for upload')
     }
 
-    // A file buffer with an existing cloudinaryPublicId is a replacement. The storage plugin
-    // names the incoming file after the document and deletes the old asset before this handler
-    // runs, so the file always uploads, with the document's current privacy and folder.
+    // Payload also passes each image variant, and the untransformed `-original` when a
+    // transformer changed the file, as its own file. generateURL builds their URLs from the main
+    // asset, so uploading them would only leave assets that nothing references or deletes. Only
+    // the main file is uploaded.
+    const isMainFile = file.filename === data?.filename
+    if (!isMainFile) {
+      recordSkippedUpload(req, storageFilePath)
+      return {}
+    }
+
+    // A replacement uploads with the document's current privacy and folder. Payload v4 deletes
+    // the old asset after this upload; see the delete handler's same-public-ID guard.
+    const settings = await withStoredSettings(req, collection.slug, config, data)
 
     try {
-      const uploadOptions = buildUploadOptions(config, file.filename, data, file.mimeType)
+      const uploadOptions = buildUploadOptions(config, file.filename, settings, file.mimeType)
       // Check if upload queue is enabled
       if (config.uploadQueue?.enabled) {
         const queue = queueManager.getQueue(collection.slug, config.uploadQueue)
-
-        // Add progress tracking field
-        data.uploadStatus = 'queued'
-        data.uploadProgress = 0
 
         // Create a promise that resolves when upload completes
         // For large files, enable chunked upload if configured
@@ -98,29 +89,27 @@ export const createUploadHandler =
             buffer: file.buffer,
             size: file.filesize,
             options: uploadOptions,
-            onProgress: (progress) => {
-              data.uploadProgress = progress
-              data.uploadStatus = 'uploading'
-            },
-            onComplete: (result) => {
-              data.uploadStatus = 'completed'
-              data.uploadProgress = 100
-              resolve(result)
-            },
-            onError: (error) => {
-              data.uploadStatus = 'failed'
-              reject(error)
-            },
+            onComplete: (result) => resolve(result),
+            onError: (error) => reject(error),
           })
         })
 
         const result = await uploadPromise
 
-        // Clear upload status fields after successful upload
-        delete data.uploadStatus
-        delete data.uploadProgress
+        if (result?.public_id) {
+          recordUpload(
+            req,
+            {
+              publicId: result.public_id,
+              resourceType: result.resource_type || 'image',
+              deliveryType: deliveryTypeOf(result.type),
+              overwritten: result.overwritten === true,
+            },
+            storageFilePath,
+          )
+        }
 
-        return processUploadResult(result, data, file, config)
+        return processUploadResult(result, settings, file, config)
       }
 
       // Regular upload (non-queued)
@@ -205,7 +194,20 @@ export const createUploadHandler =
         })
       }
 
-      return processUploadResult(result, data, file, config)
+      if (result?.public_id) {
+        recordUpload(
+          req,
+          {
+            publicId: result.public_id,
+            resourceType: result.resource_type || 'image',
+            deliveryType: deliveryTypeOf(result.type),
+            overwritten: result.overwritten === true,
+          },
+          storageFilePath,
+        )
+      }
+
+      return processUploadResult(result, settings, file, config)
     } catch (error) {
       throw new Error(
         `Failed to upload to Cloudinary: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -213,43 +215,87 @@ export const createUploadHandler =
     }
   }
 
+/**
+ * The upload's data with the privacy and dynamic folder the request leaves out taken from the
+ * stored document. Payload v4 stages an update's file before the document hooks run, with only
+ * the request's data, so a replacement that sends just a file would otherwise upload with the
+ * collection defaults. A create, or an update whose target is unknown, keeps `data` as it is.
+ */
+async function withStoredSettings(
+  req: PayloadRequest,
+  collection: string,
+  config: CloudinaryCollectionConfig,
+  data: CloudinaryDocumentData,
+): Promise<CloudinaryDocumentData> {
+  const folderConfig = getFolderConfig(config)
+  const fields = [
+    ...(config.privateFiles ? ['isPrivate'] : []),
+    ...(folderConfig.enableDynamic ? [folderConfig.fieldName || 'cloudinaryFolder'] : []),
+  ].filter((field) => data[field] === undefined)
+  const id = updateTargetOf(req, collection)
+  if (fields.length === 0 || id === undefined) return data
+
+  const stored = await req.payload.db.findOne<TypeWithID & Record<string, unknown>>({
+    collection,
+    where: { id: { equals: id } },
+    locale: storedLocale(req),
+    joins: false,
+    req,
+  })
+  if (!stored) return data
+  const settings: CloudinaryDocumentData = { ...data }
+  for (const field of fields) {
+    if (stored[field] !== undefined && stored[field] !== null) settings[field] = stored[field]
+  }
+  return settings
+}
+
+// What Payload v4 persists from the handler. Its FileData types width and height as numbers,
+// but the columns are nullable and this handler sets null on purpose (a raw file clears an
+// image's dimensions), so the metadata is cast to this type where it is returned.
+type UploadMetadata = Partial<FileData & TypeWithID>
+
 function processUploadResult(
   result: CloudinaryUploadResult,
   data: CloudinaryDocumentData,
   file: { filename: string; mimeType: string; filesize: number },
   config: CloudinaryCollectionConfig,
-): CloudinaryDocumentData {
+): UploadMetadata {
+  // Payload v4 persists only what the handler returns: `data` is a copy of the saved document,
+  // read here for the user's choices (privacy) but never mutated.
+  const metadata: CloudinaryDocumentData = {}
+
   if (result) {
-    data.cloudinaryPublicId = result.public_id
-    data.cloudinaryResourceType = result.resource_type
-    data.cloudinaryFormat = result.format
-    data.cloudinaryVersion = result.version
-    data.cloudinaryType = deliveryTypeOf(result.type)
+    metadata.cloudinaryPublicId = result.public_id
+    metadata.cloudinaryResourceType = result.resource_type
+    metadata.cloudinaryFormat = result.format
+    metadata.cloudinaryVersion = result.version
+    metadata.cloudinaryType = deliveryTypeOf(result.type)
 
     // Store additional metadata that Payload expects
-    data.filename = file.filename
-    data.filesize = result.bytes || file.filesize // Use Cloudinary's byte count if available
-    data.mimeType = file.mimeType
+    metadata.filename = file.filename
+    metadata.filesize = result.bytes || file.filesize // Use Cloudinary's byte count if available
+    metadata.mimeType = file.mimeType
 
     // Take the dimensions from the Cloudinary response. A file without them (a raw file) stores
     // null, so a replacement does not keep the dimensions of the image it replaces.
-    data.width = result.width || null
-    data.height = result.height || null
+    metadata.width = result.width || null
+    metadata.height = result.height || null
 
     // Store the actual folder used
     if (result.folder) {
-      data.cloudinaryFolder = result.folder
+      metadata.cloudinaryFolder = result.folder
     }
 
     // Handle private file settings based on user's checkbox value
     if (config.privateFiles) {
       // If isPrivate is explicitly false, respect that
       if (data.isPrivate === false) {
-        data.requiresSignedURL = false
+        metadata.requiresSignedURL = false
       } else {
         // Otherwise, mark as private (default behavior)
-        data.isPrivate = true
-        data.requiresSignedURL = true
+        metadata.isPrivate = true
+        metadata.requiresSignedURL = true
       }
     }
 
@@ -257,36 +303,33 @@ function processUploadResult(
     // hook builds every URL at read time, after the access check. Every private upload nulls
     // each stored URL field, so an update also clears any URL the row still holds, such as one
     // of the asset a replacement replaces or one a version before 1.3.0 stored.
-    if (data.isPrivate === true) {
+    if ((metadata.isPrivate ?? data.isPrivate) === true) {
       // null clears the stored column. A missing key keeps the stored value on an update. The
       // database adapter drops a null for a field the collection doesn't have.
-      const stored = data as Record<string, unknown>
+      const stored = metadata as Record<string, unknown>
       for (const field of STORED_URL_FIELDS) stored[field] = null
-      return data
+      return metadata as UploadMetadata
     }
 
-    data.cloudinaryUrl = result.secure_url
+    metadata.cloudinaryUrl = result.secure_url
 
     const asset: DeliveryAsset = {
       publicId: result.public_id,
       version: result.version,
       resourceType: result.resource_type,
       format: result.format,
-      deliveryType: data.cloudinaryType,
+      deliveryType: metadata.cloudinaryType,
     }
 
     // Generate thumbnail URL for admin display - note the uppercase URL
-    data.thumbnailURL = buildDeliveryURL(asset, { transformation: THUMBNAIL_TRANSFORMATION })
+    metadata.thumbnailURL = buildDeliveryURL(asset, { transformation: THUMBNAIL_TRANSFORMATION })
 
     // Store the original URL (without transformations)
-    const originalUrl = buildDeliveryURL(asset)
-    data.originalUrl = originalUrl
-
-    // Store the main URL - this will be the same as originalUrl if preserveOriginal is true
-    // Transformations will be applied dynamically via afterRead hook
-    data.url = originalUrl
+    // Store the main URL without transformations. The afterRead hook applies them, and builds
+    // originalUrl, at read time.
+    metadata.url = buildDeliveryURL(asset)
   }
-  return data
+  return metadata as UploadMetadata
 }
 
 function sanitizeFolderPath(folder: string): string {

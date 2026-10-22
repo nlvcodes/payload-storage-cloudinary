@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLocalReq, type CollectionConfig } from 'payload'
+import { createPayloadRequest, type CollectionConfig } from 'payload'
 import { STORED_URL_FIELDS } from '../../helpers/deliveryURL'
 import { pngUpload, startPayload, TEST_CLOUD, type PayloadHarness, type TestUser } from './harness'
 
@@ -165,7 +165,7 @@ describe('hooks build delivery URLs for the stored delivery type', () => {
 
     beforeAll(async () => {
       // Seeding a pre-1.3.0 row is a trusted server job, so it skips access on purpose.
-      const req = await createLocalReq({}, harness.payload)
+      const req = await createPayloadRequest({ payload: harness.payload })
       created = await harness.payload.create({
         collection: 'previews',
         data: {

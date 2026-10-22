@@ -1,10 +1,12 @@
 import { cloudStoragePlugin } from '@payloadcms/plugin-cloud-storage'
 import { CLOUDINARY_DELIVERY_TYPES, type CloudinaryStorageOptions } from './types.js'
-import type { Config } from 'payload'
+import type { CollectionConfig, Config, SelectType, StorageAdapter } from 'payload'
+import { getSelectMode } from 'payload/shared'
 import { createUploadHandler } from './handlers/handleUpload.js'
 import { createDeleteHandler } from './handlers/handleDelete.js'
 import { createURLGenerator } from './handlers/generateURL.js'
 import { createStaticHandler } from './handlers/staticHandler.js'
+import { createCopyFile, createDeleteFile } from './handlers/fileOperations.js'
 import { createSignedURLEndpoint, createBatchSignedURLEndpoint } from './endpoints/signedURL.js'
 import { createUploadStatusEndpoint, createCancelUploadEndpoint } from './endpoints/uploadStatus.js'
 import {
@@ -20,6 +22,11 @@ import { createAfterErrorHook } from './hooks/afterError.js'
 import { createAfterReadHook, pluginReadSelect } from './hooks/afterRead.js'
 import { createBeforeReadHook } from './hooks/beforeRead.js'
 import { createBeforeValidateHook } from './hooks/beforeValidate.js'
+import {
+  createRecordDeletedAssetHook,
+  createRecordPreviousAssetHook,
+  createRecordUpdateTargetHook,
+} from './hooks/recordAssets.js'
 import { PLUGIN_CONFIG_KEY } from './helpers/accessRule.js'
 import { pluginFieldOf } from './helpers/pluginFields.js'
 import { v2 as cloudinary } from 'cloudinary'
@@ -85,6 +92,8 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
           return {
             handleUpload: createUploadHandler(options),
             handleDelete: createDeleteHandler(options),
+            deleteFile: createDeleteFile(options),
+            copyFile: createCopyFile(),
             generateURL: createURLGenerator(options),
             staticHandler: createStaticHandler(),
             prefix,
@@ -139,10 +148,13 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                   readOnly: true,
                 },
               },
-              // Add originalUrl field to store untransformed URL
+              // The untransformed URL, built at read time. Virtual: Payload v4's `original`
+              // group stores `original.url` in the column a stored `originalUrl` used
+              // (`original_url` on the SQL adapters), so 1.x values now read as `original.url`.
               {
                 name: 'originalUrl',
                 type: 'text',
+                virtual: true,
                 label: 'Original URL',
                 admin: {
                   readOnly: true,
@@ -367,7 +379,10 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
   )
 
   // Return a wrapped plugin that adds endpoints
-  return (config: Config): Config => {
+  // Payload v4 storage adapter: register it under `storage` in the Payload
+  // config, not `plugins`. `init` applies the base cloud storage plugin, then
+  // adds this adapter's endpoints and hooks.
+  const init = (config: Config): Config => {
     // First apply the cloud storage plugin
     const basePlugin = cloudStoragePlugin({ collections })
     const modifiedConfig = basePlugin(config)
@@ -401,6 +416,9 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
         // Add hooks
         const hooks = { ...(collection.hooks || {}) }
 
+        // Record the document an update targets before Payload v4 stages its file
+        hooks.beforeOperation = [...(hooks.beforeOperation || []), createRecordUpdateTargetHook()]
+
         // Always add beforeValidate hook to preserve Cloudinary data during updates
         hooks.beforeValidate = [
           ...(hooks.beforeValidate || []),
@@ -426,8 +444,25 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
         // Always add beforeRead hook to resolve a legacy record's type before field access runs
         hooks.beforeRead = [...(hooks.beforeRead || []), createBeforeReadHook()]
 
+        // Payload v4 deletes a replaced or deleted document's file by storage key after the
+        // operation commits; record which Cloudinary asset that key is first
+        hooks.afterChange = [...(hooks.afterChange || []), createRecordPreviousAssetHook(options)]
+        hooks.afterDelete = [...(hooks.afterDelete || []), createRecordDeletedAssetHook()]
+
         // Always add afterRead hook to build URLs at read time and drop the stored ones
         hooks.afterRead = [...(hooks.afterRead || []), createAfterReadHook(collection.slug, config)]
+
+        // A read that selects fields still carries the asset fields the read hooks need.
+        // Payload v4 replaced the static forceSelect with this function; it keeps
+        // forceSelect's semantics: add the fields to an include-mode select, and leave
+        // a missing or exclude-mode select alone. A host `select` function runs first.
+        const select: CollectionConfig['select'] = (args) => {
+          const selected = collection.select?.(args) ?? args.select
+          if (!selected || getSelectMode(selected) === 'exclude') {
+            return selected
+          }
+          return { ...selected, ...pluginReadSelect(config) } as SelectType
+        }
 
         return {
           ...collection,
@@ -435,14 +470,21 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
           hooks,
           // The server helpers read the access rule's config from here
           custom: { ...collection.custom, [PLUGIN_CONFIG_KEY]: rawConfig },
-          // A read that selects fields still carries the asset fields the read hooks need
-          forceSelect: { ...collection.forceSelect, ...pluginReadSelect(config) },
+          select,
         }
       })
     }
 
     return modifiedConfig
   }
+
+  const adapter: StorageAdapter = {
+    name: 'cloudinary',
+    collections: Object.keys(options.collections),
+    init,
+  }
+
+  return adapter
 }
 
 export type {

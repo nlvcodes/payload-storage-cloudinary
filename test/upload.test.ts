@@ -82,7 +82,7 @@ describe('Upload Handler', () => {
     const result = await handler({
       collection: mockCollection as any,
       file: mockFile,
-      data: {},
+      data: { filename: mockFile.filename },
       req: {} as any,
     })
 
@@ -134,7 +134,7 @@ describe('Upload Handler', () => {
     await handler({
       collection: mockCollection as any,
       file: mockFile,
-      data: {},
+      data: { filename: mockFile.filename },
       req: {} as any,
     })
 
@@ -169,7 +169,7 @@ describe('Upload Handler', () => {
           filesize: 4,
           mimeType: 'image/jpeg',
         },
-        data: {},
+        data: { filename: 'test.jpg' },
         req: {} as any,
       }),
     ).rejects.toThrow('Failed to upload to Cloudinary: Upload failed')

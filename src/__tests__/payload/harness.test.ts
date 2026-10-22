@@ -37,7 +37,8 @@ describe('real Payload harness', () => {
     expect(readRes.status).toBe(200)
     const read = await readRes.json()
     expect(read.id).toBe(created.id)
-    expect(read.filename).toBe('secret.png')
+    // Payload v4 stores an untransformed upload as `<name>-original.<ext>`
+    expect(read.filename).toBe('secret-original.png')
     expect(read.isPrivate).toBe(true)
     expect(read.cloudinaryPublicId).toBe(uploads[0].result.public_id)
   })

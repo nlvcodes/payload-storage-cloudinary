@@ -3,9 +3,12 @@ import type { CollectionConfig } from 'payload'
 import { STORED_URL_FIELDS } from '../../helpers/deliveryURL'
 import { pngUpload, startPayload, type PayloadHarness, type TestUser } from './harness'
 
-const uploadCollection = (slug: string): CollectionConfig => ({
+// Unversioned, the v3 default: a replacement deletes the old asset. Payload v4 versions every
+// collection by default and keeps a replaced file for its versions; see the `versioned` collection.
+const uploadCollection = (slug: string, versions = false): CollectionConfig => ({
   slug,
   upload: true,
+  versions,
   fields: [{ name: 'alt', type: 'text' }],
 })
 
@@ -19,6 +22,7 @@ describe('a replacement file uploads', () => {
         uploadCollection('media'),
         uploadCollection('folders'),
         uploadCollection('previews'),
+        uploadCollection('versioned', true),
       ],
       pluginCollections: {
         media: { privateFiles: true },
@@ -27,6 +31,7 @@ describe('a replacement file uploads', () => {
           privateFiles: true,
           transformations: { default: {}, publicTransformation: { enabled: true } },
         },
+        versioned: { privateFiles: true },
       },
     })
     user = await harness.createUser()
@@ -98,6 +103,20 @@ describe('a replacement file uploads', () => {
     ).toHaveLength(1)
   })
 
+  it('keeps the old asset of a versioned collection, which its versions still reference', async () => {
+    const doc = await upload('versioned-old.png', { isPrivate: false }, 'versioned')
+
+    const calls = await update(doc.id, pngUpload('versioned-new.png'), 'versioned')
+
+    const uploads = uploadsIn(calls)
+    expect(uploads).toHaveLength(1)
+    expect(await storedRow(doc.id, 'versioned')).toMatchObject({
+      cloudinaryPublicId: uploads[0].result.public_id,
+      cloudinaryType: 'upload',
+    })
+    expect(calls.filter((c) => c.method === 'destroy')).toHaveLength(0)
+  })
+
   it('returns a URL for the new asset on a read after the replacement', async () => {
     const doc = await upload('read-old.png', { isPrivate: false })
 
@@ -155,11 +174,21 @@ describe('a replacement file uploads', () => {
 
   it('stores no URL of the old asset when a private replacement lands on a legacy row', async () => {
     const doc = await upload('legacy-old.png', { isPrivate: true }, 'previews')
-    // A row from before 1.3.0 stored a URL of the old asset in every URL field.
+    // A row from before 1.3.0 stored a URL of the old asset in every URL field. Its originalUrl
+    // reads as original.url in 2.0, whose column Payload v4's original group took over.
     const oldURL = `https://res.cloudinary.com/demo/image/upload/${doc.cloudinaryPublicId}.png`
-    const legacyURLs = Object.fromEntries(STORED_URL_FIELDS.map((field) => [field, oldURL]))
-    await harness.payload.db.updateOne({ collection: 'previews', id: doc.id, data: legacyURLs })
-    expect(await storedRow(doc.id, 'previews')).toMatchObject(legacyURLs)
+    // The adapter adds keys to the data it writes, so each use gets its own copy
+    const legacyURLs = () => ({
+      ...Object.fromEntries(
+        STORED_URL_FIELDS.filter((field) => field !== 'originalUrl').map((field) => [
+          field,
+          oldURL,
+        ]),
+      ),
+      original: { url: oldURL },
+    })
+    await harness.payload.db.updateOne({ collection: 'previews', id: doc.id, data: legacyURLs() })
+    expect(await storedRow(doc.id, 'previews')).toMatchObject(legacyURLs())
 
     await update(doc.id, pngUpload('legacy-new.png', { isPrivate: true }), 'previews')
 
@@ -167,6 +196,7 @@ describe('a replacement file uploads', () => {
     for (const field of STORED_URL_FIELDS) {
       expect(row[field] ?? '', field).not.toContain(doc.cloudinaryPublicId)
     }
+    expect(row.original?.url ?? '', 'original.url').not.toContain(doc.cloudinaryPublicId)
   })
 
   it('uploads nothing and deletes nothing on an update without a file', async () => {

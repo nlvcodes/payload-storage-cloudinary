@@ -12,7 +12,9 @@ import {
   assetFieldsOf,
   deliveryAssetOf,
   isPrivateFile,
+  ORIGINAL_URL_FIELD,
   STORED_URL_FIELDS,
+  storedOriginalURL,
   type DeliveryAsset,
 } from './deliveryURL.js'
 import { messageOf } from './errorMessage.js'
@@ -190,13 +192,18 @@ async function migrateDocument({
       await writeVersionRow(payload, req, collection, versionRow, {
         ...versionRow.version,
         ...clearedURLs,
+        ...withoutOriginalURL(versionRow.version),
         ...(sameAsset
           ? assetFields
           : { cloudinaryType: deliveryAssetOf(versionRow.version).deliveryType }),
       })
       written.push(versionRow)
     }
-    await writeStoredRow(payload, req, collection, row.id, { ...assetFields, ...clearedURLs })
+    await writeStoredRow(payload, req, collection, row.id, {
+      ...assetFields,
+      ...clearedURLs,
+      ...withoutOriginalURL(row),
+    })
   } catch (error) {
     if (req.transactionID) {
       // The rollback puts back every row this run wrote, so only the asset needs moving back.
@@ -455,5 +462,20 @@ function publicCopyNamer(
  */
 function needsMigration(row: Record<string, any>, urlFields: string[]): boolean {
   if (!isPrivateFile(row)) return false
-  return row.cloudinaryType !== 'authenticated' || urlFields.some((field) => Boolean(row[field]))
+  return (
+    row.cloudinaryType !== 'authenticated' ||
+    urlFields.some((field) => Boolean(row[field])) ||
+    Boolean(storedOriginalURL(row))
+  )
+}
+
+/**
+ * The row's `original` group with its URL cleared, or nothing when the row has no group. On the
+ * SQL adapters `original.url` holds a 1.x row's `originalUrl` (see ORIGINAL_URL_FIELD), and the
+ * adapter writes skip the field hooks that would clear it, so it is cleared here.
+ */
+function withoutOriginalURL(row: Record<string, any> | undefined): Record<string, unknown> {
+  const group = row?.[ORIGINAL_URL_FIELD.group]
+  if (!group || typeof group !== 'object') return {}
+  return { [ORIGINAL_URL_FIELD.group]: { ...group, [ORIGINAL_URL_FIELD.field]: null } }
 }

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   commitTransaction,
-  createLocalReq,
+  createPayloadRequest,
   initTransaction,
   killTransaction,
   type CollectionConfig,
@@ -71,9 +71,10 @@ describe('migratePrivateAssets inside a migration transaction', () => {
         requiresSignedURL: true,
         url,
         cloudinaryUrl: url,
-        originalUrl: url,
+        // A 1.x originalUrl, where 2.0 reads it on SQL
+        original: { url },
       },
-      req: await createLocalReq({}, harness.payload),
+      req: await createPayloadRequest({ payload: harness.payload }),
     })
     return doc.id as number
   }
@@ -84,7 +85,7 @@ describe('migratePrivateAssets inside a migration transaction', () => {
       await seed(REFUSED_FILENAME),
       await seed('after-hook.png'),
     ]
-    req = await createLocalReq({}, harness.payload)
+    req = await createPayloadRequest({ payload: harness.payload })
     expect(await initTransaction(req)).toBe(true)
 
     const report = await migratePrivateAssets({
@@ -98,9 +99,9 @@ describe('migratePrivateAssets inside a migration transaction', () => {
       collection: 'media',
       pagination: false,
       sort: 'id',
-      req: await createLocalReq({}, harness.payload),
+      req: await createPayloadRequest({ payload: harness.payload }),
     })
-    expect(docs.map((row) => [row.id, row.cloudinaryType, row.originalUrl ?? null])).toEqual(
+    expect(docs.map((row) => [row.id, row.cloudinaryType, row.original?.url ?? null])).toEqual(
       ids.map((id) => [id, 'authenticated', null]),
     )
     expect(report.failed).toEqual([])
@@ -113,7 +114,7 @@ describe('migratePrivateAssets inside a migration transaction', () => {
           collection: 'stopped',
           pagination: false,
           sort: 'id',
-          req: await createLocalReq({}, harness.payload),
+          req: await createPayloadRequest({ payload: harness.payload }),
         })
       ).docs
 
@@ -131,7 +132,7 @@ describe('migratePrivateAssets inside a migration transaction', () => {
         if (args.id === ids[1]) throw new Error('connection reset')
         return updateOne.call(harness.payload.db, args)
       })
-      req = await createLocalReq({}, harness.payload)
+      req = await createPayloadRequest({ payload: harness.payload })
       expect(await initTransaction(req)).toBe(true)
 
       const run = migratePrivateAssets({ payload: harness.payload, req, collection: 'stopped' })
@@ -178,7 +179,7 @@ describe('migratePrivateAssets inside a migration transaction', () => {
       )
       const rerun = await migratePrivateAssets({
         payload: harness.payload,
-        req: await createLocalReq({}, harness.payload),
+        req: await createPayloadRequest({ payload: harness.payload }),
         collection: 'stopped',
       })
 

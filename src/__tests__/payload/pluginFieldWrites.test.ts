@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLocalReq, type Access, type CollectionConfig } from 'payload'
+import { createPayloadRequest, type Access, type CollectionConfig } from 'payload'
 import { pngUpload, startPayload, type PayloadHarness, type TestUser } from './harness'
 
 // Each user reads, updates and deletes only the files they own.
@@ -13,9 +13,11 @@ const collections: CollectionConfig[] = [
     fields: [{ name: 'owner', type: 'relationship', relationTo: 'users' }],
   },
   // Every plugin field there is: private files, a dynamic folder, presets and the preview.
+  // Unversioned, so a replacement deletes the old asset (a versioned collection keeps it)
   {
     slug: 'previews',
     upload: true,
+    versions: false,
     fields: [{ name: 'alt', type: 'text' }],
   },
 ]
@@ -315,7 +317,10 @@ describe('plugin-managed fields are read-only to API writes', () => {
         collection: 'media',
         id,
         data: { cloudinaryPublicId: FORGED.cloudinaryPublicId },
-        req: await createLocalReq({ user: await harness.userOf(attacker) }, harness.payload),
+        req: await createPayloadRequest({
+          user: await harness.userOf(attacker),
+          payload: harness.payload,
+        }),
         overrideAccess,
       })
 

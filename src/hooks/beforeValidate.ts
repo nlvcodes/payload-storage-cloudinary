@@ -40,7 +40,6 @@ export const createBeforeValidateHook =
 
       // Preserve URLs
       data.url = originalDoc.url
-      data.originalUrl = originalDoc.originalUrl
       data.thumbnailURL = originalDoc.thumbnailURL
 
       // Preserve file metadata
